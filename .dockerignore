@@ -1,0 +1,8 @@
+node_modules
+.vscode
+.git
+.babelrc
+.eslintrc.js
+README.md
+webpack.mix.js
+gui
