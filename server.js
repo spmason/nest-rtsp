@@ -40,6 +40,16 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		}
 		catch ( error ) {
 			console.log( `Failed to load device list due to error: ${error.message}` )
+			const lines = error.stack.split( '\n' ).map( l => l.trim() )
+			let i = 1
+			let lined = false
+			while ( i < lines.length && !lined ) {
+				if ( !lined ) {
+					lined = lines[i].includes( ':' )
+				}
+				console.error( clc.redBright( lines[i] ) )
+				i ++
+			}
 			return []
 		}
 	}
@@ -89,16 +99,16 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			// const { cmd, fp } = controllers.streamer.streamOut( streamUrl, port, path )
 			// console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} Running Command: ${clc.cyan( cmd )}` )
 			processes.set( id, fp )
-			// if ( fp.stdout ) {
-			// 	fp.stdout.on( 'data', data => {
-			// 		console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyan( data )}` )
-			// 	} )
-			// }
-			// if ( fp.stderr ) {
-			// 	fp.stderr.on( 'data', data => {
-			// 		console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
-			// 	} )
-			// }
+			if ( fp.stdout ) {
+				fp.stdout.on( 'data', data => {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyan( data )}` )
+				} )
+			}
+			if ( fp.stderr ) {
+				fp.stderr.on( 'data', data => {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
+				} )
+			}
 			fp.on( 'exit', code => {
 				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
 				processes.delete( id )
@@ -154,71 +164,73 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 	}
 	rtsps_snapshot.map( id => startRTSP( id, true ) )
 	server.on( 'request', ( { id, cmd, args } ) => {
-		switch ( cmd ) {
-			case 'ping': server.emit( `response-${id}`, 'pong' ); break
-			case 'refresh': tick( args ).then( () => {
-				server.emit( `response-${id}`, 'OK' )
-			} ); break
-			case 'gaurl': controllers.google.getRedirectUrl( id ).then( url => {
-				server.emit( `response-${id}`, url )
-			} ); break
-			case 'pcmurl': controllers.google.getPCMRedirectUrl( id ).then( url => {
-				server.emit( `response-${id}`, url )
-			} ); break
-			case 'listDevices': devices( google_access_tokens ).then( list => {
-				server.emit( `response-${id}`, list )
-			} ).catch( err => {
-				server.emit( `error-${id}`, err.message )
-			} ); break
-			case 'handleOauthResponse': controllers.google.handleResponse( args ).then( async ( { tokens } ) => {
-				if ( tokens ) {
-					const { count } = await db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'google_access_tokens' ).first()
-					if ( 0 < parseInt( count ) ) {
-						await db.table( 'settings' ).update( { value: JSON.stringify( tokens ) } ).where( 'key', 'google_access_tokens' )
+		settings().then( ( { google_access_tokens } ) => {
+			switch ( cmd ) {
+				case 'ping': server.emit( `response-${id}`, 'pong' ); break
+				case 'refresh': tick( args ).then( () => {
+					server.emit( `response-${id}`, 'OK' )
+				} ); break
+				case 'gaurl': controllers.google.getRedirectUrl( id ).then( url => {
+					server.emit( `response-${id}`, url )
+				} ); break
+				case 'pcmurl': controllers.google.getPCMRedirectUrl( id ).then( url => {
+					server.emit( `response-${id}`, url )
+				} ); break
+				case 'listDevices': devices( google_access_tokens ).then( list => {
+					server.emit( `response-${id}`, list )
+				} ).catch( err => {
+					server.emit( `error-${id}`, err.message )
+				} ); break
+				case 'handleOauthResponse': controllers.google.handleResponse( args ).then( async ( { tokens } ) => {
+					if ( tokens ) {
+						const { count } = await db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'google_access_tokens' ).first()
+						if ( 0 < parseInt( count ) ) {
+							await db.table( 'settings' ).update( { value: JSON.stringify( tokens ) } ).where( 'key', 'google_access_tokens' )
+						}
+						else {
+							await db.table( 'settings' ).insert( { key: 'google_access_tokens', value: JSON.stringify( tokens ) } )
+						}
+						server.emit( `response-${id}`, tokens )
 					}
 					else {
-						await db.table( 'settings' ).insert( { key: 'google_access_tokens', value: JSON.stringify( tokens ) } )
+						server.emit( `error-${id}`, new Error( 'Authentication Failed' ) )
 					}
-					server.emit( `response-${id}`, tokens )
-				}
-				else {
-					server.emit( `error-${id}`, new Error( 'Authentication Failed' ) )
-				}
-			} ); break
-			case 'logout': db.table( 'settings' ).where( 'key', 'google_access_tokens' ).del().then( () => {
-				server.emit( `response-${id}`, 'OK' )
-			} ); break
-			case 'saveRTSP': db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_map' ).first().then( async ( { count } ) => {
-				if ( 0 < parseInt( count ) ) {
-					await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_map' )
-				}
-				else {
-					await db.table( 'settings' ).insert( { key: 'rtsp_map', value: JSON.stringify( args ) } )
-				}
-				server.emit( `response-${id}`, 'OK' )
-			} ); break
-			case 'saveRTSPPath': db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_paths' ).first().then( async ( { count } ) => {
-				if ( 0 < parseInt( count ) ) {
-					await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_paths' )
-				}
-				else {
-					await db.table( 'settings' ).insert( { key: 'rtsp_paths', value: JSON.stringify( args ) } )
-				}
-				server.emit( `response-${id}`, 'OK' )
-			} ); break
-			case 'startRTSP': startRTSP( args ).then( () => {
-				server.emit( `response-${id}`, 'OK' )
-			} ); break
-			case 'restartRTSP': stopRTSP( args ).then( () => {
-				startRTSP( args ).then( () => {
+				} ); break
+				case 'logout': db.table( 'settings' ).where( 'key', 'google_access_tokens' ).del().then( () => {
 					server.emit( `response-${id}`, 'OK' )
-				} )
-			} ); break
-			case 'stopRTSP': stopRTSP( args ).then( () => {
-				server.emit( `response-${id}`, 'OK' )
-			} ); break
-			default: server.emit( `error-${id}`, new Error( `No such command "${cmd}"` ) )
-		}
+				} ); break
+				case 'saveRTSP': db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_map' ).first().then( async ( { count } ) => {
+					if ( 0 < parseInt( count ) ) {
+						await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_map' )
+					}
+					else {
+						await db.table( 'settings' ).insert( { key: 'rtsp_map', value: JSON.stringify( args ) } )
+					}
+					server.emit( `response-${id}`, 'OK' )
+				} ); break
+				case 'saveRTSPPath': db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_paths' ).first().then( async ( { count } ) => {
+					if ( 0 < parseInt( count ) ) {
+						await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_paths' )
+					}
+					else {
+						await db.table( 'settings' ).insert( { key: 'rtsp_paths', value: JSON.stringify( args ) } )
+					}
+					server.emit( `response-${id}`, 'OK' )
+				} ); break
+				case 'startRTSP': startRTSP( args ).then( () => {
+					server.emit( `response-${id}`, 'OK' )
+				} ); break
+				case 'restartRTSP': stopRTSP( args ).then( () => {
+					startRTSP( args ).then( () => {
+						server.emit( `response-${id}`, 'OK' )
+					} )
+				} ); break
+				case 'stopRTSP': stopRTSP( args ).then( () => {
+					server.emit( `response-${id}`, 'OK' )
+				} ); break
+				default: server.emit( `error-${id}`, new Error( `No such command "${cmd}"` ) )
+			}
+		} )
 	} )
 	// once per second, check the status and forward it to the GUI
 	setInterval( tick, 1000 )

@@ -20,4 +20,5 @@ EXPOSE 554/tcp
 EXPOSE 554/udp
 EXPOSE 10000-20000/tcp
 EXPOSE 10000-20000/udp
-CMD ["node", "/home/nest-rtsp/server.js"]
+VOLUME /home/nest-rtsp/persistent/
+CMD ["node", "/home/nest-rtsp/dockerized.js"]

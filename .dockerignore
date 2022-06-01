@@ -6,3 +6,5 @@ node_modules
 README.md
 webpack.mix.js
 gui
+nest-rtsp.sqlite
+persistent/nest-rtsp.sqlite

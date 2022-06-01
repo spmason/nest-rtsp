@@ -1,7 +1,7 @@
 // Update with your config settings.
-const { configuration } = require( './src' )
+const { providers } = require( './src' )
 /**
  * @type { Object.<string, import("knex").Knex.Config> }
  */
-const config = configuration.get( 'database' )
+const config = providers.configuration.get( 'database' )
 module.exports = config

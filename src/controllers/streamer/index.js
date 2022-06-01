@@ -3,7 +3,8 @@ const { exec } = require( 'child_process' )
 const streamOut = ( src, port = 554, path = '/' ) => {
 	const args = [
 		'ffmpeg',
-		'-v verbose',
+		// '-v verbose',
+		'-loglevel warning',
 		'-re',
 		`-i "${src}"`,
 		'-f rtsp',

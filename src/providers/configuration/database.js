@@ -4,7 +4,7 @@ const mustache = require( 'mustache' )
 let cfg = {
 	client: 'better-sqlite3',
 	connection: {
-		filename: path.join( __dirname, '..', '..', '..', 'nest-rtsp.sqlite' )
+		filename: path.join( __dirname, '..', '..', '..', 'persistent', 'nest-rtsp.sqlite' )
 	},
 	useNullAsDefault: true
 }

@@ -27,8 +27,8 @@ The following can also be configured by changing values of environmental variabl
 | Description | Environmental Variable | Default |
 | --- | --- | --- |
 | HTTP GUI Port | `HTTP_PORT` | `3000` |
-| RTSP Port which will be published for clients | `RTSP_CLIENT_PORT` | `6554` |
-| RTSP Port which ffmpeg will stream to | `RTSP_SERVER_PORT` | `554` |
+| RTSP Port which will be published for clients | `RTSP_CLIENT_PORT` | `554` |
+| RTSP Port which ffmpeg will stream to | `RTSP_SERVER_PORT` | `6554` |
 | RTSP RTP Port Start | `RTSP_RTP_START` | `10000` |
 | RTSP RTP Port Count | `RTSP_RTP_COUNT` | `10000` |
 | [Knex.js Configuration](http://knexjs.org/guide/#configuration-options) | `DB_CONFIG` | `"{\"client\":\"better-sqlite3\",\"connection\":{\"filename\":\"{{BASE}}/nest-rtsp.sqlite\"}}"` |
