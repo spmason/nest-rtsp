@@ -107,6 +107,16 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			if ( fp.stderr ) {
 				fp.stderr.on( 'data', data => {
 					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
+					if ( 'string' === typeof data && data.includes( 'The specified session has been invalidated for some reason.' ) ) {
+						console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+						fp.once( 'exit', code => {
+							if ( 0 === parseInt( code ) ) {
+								process.nextTick( () => {
+									startRTSP( id, false )
+								} )
+							}
+						} )
+					}
 				} )
 			}
 			fp.on( 'exit', code => {
