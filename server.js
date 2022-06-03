@@ -124,15 +124,6 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
 					if ( 'string' === typeof data && data.includes( 'The specified session has been invalidated for some reason.' ) ) {
 						console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
-						fp.once( 'exit', code => {
-							if ( 0 === parseInt( code ) ) {
-								processes.delete( id )
-								streams.delete( id )
-								process.nextTick( () => {
-									startRTSP( id, true )
-								} )
-							}
-						} )
 					}
 				} )
 			}
@@ -140,7 +131,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
 				processes.delete( id )
 				streams.delete( id )
-				if ( ![ 255,0 ].includes( parseInt( code ) ) && 5 > retry ) {
+				if ( ![ 255 ].includes( parseInt( code ) ) && 5 > retry ) {
 					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
 					process.nextTick( () => {
 						startRTSP( id, true, retry + 1 )
