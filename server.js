@@ -12,6 +12,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 	console.log( `RTSP Server listening for clients on 0.0.0.0:${rtsps.ports.client} and listening for streams on 0.0.0.0:${rtsps.ports.server}` )
 	const processes = new Map()
 	const streams = new Map()
+	const uris = new Map()
 	const settings = async () => {
 		const rows = await db.table( 'settings' )
 		const fromDb = Object.assign( {}, ...rows.map( r => {
@@ -113,6 +114,12 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			await controllers.sleep( 5000 )
 			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Starting stream for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
 			const streamUrl = stream.streamUrls.rtspUrl
+			if ( uris.has( path ) ) {
+				if ( uris.get( path ) === streamUrl ) {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( `URI for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )} was already used / consumed and should not have been re-issued!` )
+				}
+			}
+			uris.set( path, streamUrl )
 			streams.set( id, stream )
 			rtsps.add( path )
 			const { fp } = controllers.streamer.streamOut( streamUrl, port, path )

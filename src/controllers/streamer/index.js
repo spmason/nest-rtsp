@@ -3,7 +3,6 @@ const { exec } = require( 'child_process' )
 const streamOut = ( src, port = 554, path = '/' ) => {
 	const args = [
 		'ffmpeg',
-		// '-v verbose',
 		'-loglevel warning',
 		'-re',
 		`-i "${src}"`,
@@ -13,6 +12,9 @@ const streamOut = ( src, port = 554, path = '/' ) => {
 		'-fflags +genpts+discardcorrupt',
 		'-rtsp_transport udp',
 		'-use_wallclock_as_timestamps 1',
+		'-vsync 0',
+		'-enc_time_base -1',
+		'-err_detect ignore_err',
 		'-c copy',
 		`rtsp://127.0.0.1:${port}${path}`
 	]
