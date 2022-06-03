@@ -137,6 +137,15 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 						startRTSP( id, true, retry + 1 )
 					} )
 				}
+				else if ( ![ 255 ].includes( parseInt( code ) ) && 10 > retry ) {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream in 30 seconds' )}` )
+					setTimeout( () => {
+						startRTSP( id, true, retry + 1 )
+					}, 30000 )
+				}
+				else if ( ![ 255 ].includes( parseInt( code ) ) && 10 <= retry ) {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.red( 'Failed to restart stream after 10 attempts' )}` )
+				}
 			} )
 		}
 		if ( !booting ) {
