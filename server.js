@@ -107,8 +107,11 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		const port = parseInt( rtsps.ports.server )
 		const path = rtsp_paths[id]
 		if ( !processes.has( id ) ) {
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Starting stream for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
+			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Getting stream URI for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
 			const stream = await controllers.google.getRTSPStream( id )
+			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Waiting 5 seconds to start stream for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
+			await controllers.sleep( 5000 )
+			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Starting stream for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
 			const streamUrl = stream.streamUrls.rtspUrl
 			streams.set( id, stream )
 			rtsps.add( path )
