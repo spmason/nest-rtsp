@@ -67,25 +67,42 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		for ( let i = 0; i < sa.length; i++ ) {
 			const [ id, info ] = sa[i]
 			const path = rtsp_paths[id]
-			const { expiresAt, streamExtensionToken } = info
-			const expiresAtMoment = moment( expiresAt )
-			const expiresAtThresholdMoment = expiresAtMoment.clone().subtract( 1, 'minute' )
-			const now = moment()
-			if ( now.isSameOrAfter( expiresAtThresholdMoment ) ) {
-				console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} Extending Stream` )
-				const results = await controllers.google.extendRTSPStream( id, streamExtensionToken )
-				const updated = merge( {}, info, results )
-				streams.set( id, updated )
+			if ( !processes.has( id ) ) {
+				// the stream process is missing. remove it and try to restart it
+				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} Process is missing. Clearing and restarting.` )
+				streams.delete( id )
+				process.nextTick( () => {
+					startRTSP( id, true )
+				} )
 			}
-			// else {
-			// 	const remaining = expiresAtMoment.diff( now, 'seconds' )
-			// 	const minutesRemaining = Math.floor( remaining / 60 )
-			// 	const secondsRemaining = remaining - ( minutesRemaining * 60 )
-			// 	console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} ${minutesRemaining}:${secondsRemaining} before expiration` )
-			// }
+			else {
+				// the stream process exists. check if it is running and then continue
+				const cp = processes.get( id )
+				if ( null !== cp.exitCode ) {
+					// the stream is not running. clear the process and info, and restart the stream
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} Process is ${clc.redBright( 'DEAD' )}. Clearing and restarting.` )
+					streams.delete( id )
+					processes.delete( id )
+					process.nextTick( () => {
+						startRTSP( id, true )
+					} )
+				}
+				else {
+					const { expiresAt, streamExtensionToken } = info
+					const expiresAtMoment = moment( expiresAt )
+					const expiresAtThresholdMoment = expiresAtMoment.clone().subtract( 1, 'minute' )
+					const now = moment()
+					if ( now.isSameOrAfter( expiresAtThresholdMoment ) ) {
+						console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} Extending Stream` )
+						const results = await controllers.google.extendRTSPStream( id, streamExtensionToken )
+						const updated = merge( {}, info, results )
+						streams.set( id, updated )
+					}
+				}
+			}
 		}
 	}
-	const startRTSP = async ( id, booting ) => {
+	const startRTSP = async ( id, booting, retry = 0 ) => {
 		const { rtsp_paths } = await settings()
 		const port = parseInt( rtsps.ports.server )
 		const path = rtsp_paths[id]
@@ -96,8 +113,6 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			streams.set( id, stream )
 			rtsps.add( path )
 			const { fp } = controllers.streamer.streamOut( streamUrl, port, path )
-			// const { cmd, fp } = controllers.streamer.streamOut( streamUrl, port, path )
-			// console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} Running Command: ${clc.cyan( cmd )}` )
 			processes.set( id, fp )
 			if ( fp.stdout ) {
 				fp.stdout.on( 'data', data => {
@@ -111,8 +126,10 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 						console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
 						fp.once( 'exit', code => {
 							if ( 0 === parseInt( code ) ) {
+								processes.delete( id )
+								streams.delete( id )
 								process.nextTick( () => {
-									startRTSP( id, false )
+									startRTSP( id, true )
 								} )
 							}
 						} )
@@ -122,6 +139,13 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			fp.on( 'exit', code => {
 				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
 				processes.delete( id )
+				streams.delete( id )
+				if ( ![ 255,0 ].includes( parseInt( code ) ) && 5 > retry ) {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+					process.nextTick( () => {
+						startRTSP( id, true, retry + 1 )
+					} )
+				}
 			} )
 		}
 		if ( !booting ) {
