@@ -95,9 +95,14 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 					const now = moment()
 					if ( now.isSameOrAfter( expiresAtThresholdMoment ) ) {
 						console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} Extending Stream` )
-						const results = await controllers.google.extendRTSPStream( id, streamExtensionToken )
-						const updated = merge( {}, info, results )
-						streams.set( id, updated )
+						try {
+							const results = await controllers.google.extendRTSPStream( id, streamExtensionToken )
+							const updated = merge( {}, info, results )
+							streams.set( id, updated )
+						}
+						catch ( error ) {
+							console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} failed to extend stream due to error: ${clc.redBright( error.message )}` )
+						}
 					}
 				}
 			}
@@ -108,15 +113,25 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		const port = parseInt( rtsps.ports.server )
 		const path = rtsp_paths[id]
 		if ( !processes.has( id ) ) {
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Getting stream URI for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
-			const stream = await controllers.google.getRTSPStream( id )
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Waiting 5 seconds to start stream for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
+			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Getting stream URI for ${ clc.whiteBright( id ) }` )}` )
+			let stream
+			try {
+				stream = await controllers.google.getRTSPStream( id )
+			}
+			catch ( error ) {
+				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( `Failed to get stream for stream for ${ clc.whiteBright( id ) }` )} due to error ${clc.yellowBright( error.message )}` )
+				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream in 60 seconds' )}` )
+				setTimeout( () => {
+					startRTSP( id, true, retry + 1 )
+				}, 60000 )
+			}
+			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Waiting 5 seconds to start stream for ${ clc.whiteBright( id ) }` )}` )
 			await controllers.sleep( 5000 )
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Starting stream for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )}` )
+			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Starting stream for ${ clc.whiteBright( id ) }` )}` )
 			const streamUrl = stream.streamUrls.rtspUrl
 			if ( uris.has( path ) ) {
 				if ( uris.get( path ) === streamUrl ) {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( `URI for ${ clc.whiteBright( id ) } on path ${clc.cyanBright( path )}` )} was already used / consumed and should not have been re-issued!` )
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( `URI for ${ clc.whiteBright( id ) }` )} was already used / consumed and should not have been re-issued!` )
 				}
 			}
 			uris.set( path, streamUrl )
@@ -153,8 +168,11 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 						startRTSP( id, true, retry + 1 )
 					}, 30000 )
 				}
-				else if ( ![ 255 ].includes( parseInt( code ) ) && 10 <= retry ) {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.red( 'Failed to restart stream after 10 attempts' )}` )
+				else {
+					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream in 60 seconds' )}` )
+					setTimeout( () => {
+						startRTSP( id, true, retry + 1 )
+					}, 60000 )
 				}
 			} )
 		}
