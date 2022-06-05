@@ -13,9 +13,6 @@ before_script:
 
 sast:
   stage: sast
-  only:
-    - master
-    - tags
 include:
 - template: Security/SAST.gitlab-ci.yml
 
