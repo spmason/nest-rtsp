@@ -186,9 +186,16 @@
                 </template>
                 <!-- eslint-disable-next-line vue/valid-v-slot -->
                 <template #item.resolution="{ item }">
-                  <code v-text="item.resolution.width" />
-                  <span>×</span>
-                  <code v-text="item.resolution.height" />
+                  <code
+                    v-if="item.resolution"
+                    v-text="item.resolution.width"
+                  />
+                  <span v-if="item.resolution">×</span>
+                  <code
+                    v-if="item.resolution"
+                    v-text="item.resolution.height"
+                  />
+                  <span v-if="!item.resolution">Not Reported</span>
                 </template>
                 <!-- eslint-disable-next-line vue/valid-v-slot -->
                 <template #item.__rtsp="{ item }">
