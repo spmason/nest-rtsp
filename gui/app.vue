@@ -303,7 +303,7 @@ export default {
 					room: c.parentRelations[0] ? c.parentRelations[0].displayName.trim() : 'None',
 					name: c.traits['sdm.devices.traits.Info'].customName.trim(),
 					resolution: c.traits['sdm.devices.traits.CameraLiveStream'].maxVideoResolution,
-					status: ( 'undefined' !== typeof this.processes[c.name] ) ? `PID ${this.processes[c.name]}` : 'Not Running',
+					status: ( 'undefined' !== typeof this.processes[c.name] ) ? this.processes[c.name] : 'Not Running',
 					running: ( 'undefined' !== typeof this.processes[c.name] )
 				}
 				if ( 'string' !== typeof ret.name || 0 === ret.name.length ) {

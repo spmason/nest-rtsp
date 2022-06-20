@@ -28,6 +28,7 @@
     "knex": "^2.1.0",
     "lodash.merge": "^4.6.2",
     "moment": "^2.29.3",
+    "mqtt": "^4.3.7",
     "mustache": "^4.2.0",
     "rtsp-server": "^1.2.2",
     "socket.io": "^4.5.1",

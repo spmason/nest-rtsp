@@ -76,6 +76,18 @@ const extendRTSPStream = async ( name, streamExtensionToken ) => {
 	return results
 }
 
+const getDevices = async google_access_tokens => {
+	const { client: oac, google } = await setCredentials( google_access_tokens )
+	const client = google.smartdevicemanagement( {
+		version: 'v1',
+		auth: oac
+	} )
+	const { data: list } = await client.enterprises.devices.list( { parent: [ 'enterprises', GA_SDM_PID ].join( '/' ) } )
+	const { devices } = list
+	const cameras = devices.filter( d => Object.keys( d.traits ).includes( 'sdm.devices.traits.CameraLiveStream' ) )
+	return cameras
+}
+
 module.exports = {
 	getRedirectUrl,
 	getPCMRedirectUrl,
@@ -83,5 +95,6 @@ module.exports = {
 	setCredentials,
 	oauth2,
 	getRTSPStream,
-	extendRTSPStream
+	extendRTSPStream,
+	getDevices
 }
