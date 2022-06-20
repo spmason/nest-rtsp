@@ -140,8 +140,10 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 	dbg( 'Loaded Streams from Persistance Snapshot' )
 	dbg( 'Starting Status Broadcast' )
 	setInterval( app.tick.bind( app, streams ), 1000 )
+	setInterval( controllers.app.tock.bind( controllers.app, streams ) )
 	dbg( 'Sending First Status Update' )
 	app.tick( streams )
+	controllers.app.tock( streams )
 } ).catch( error => {
 	console.error( clc.redBright( error.message ) )
 	const lines = error.stack.split( '\n' ).map( l => l.trim() )
