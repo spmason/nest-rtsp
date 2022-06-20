@@ -276,12 +276,12 @@ class FeedClient extends EventEmitter {
 	}
 
 	static async tock( streams ) {
-		const promises = [ ...streams.map( async i => {
+		const promises = [ ...streams ].map( async i => {
 			const [ id, feed ] = i // eslint-disable-line no-unused-vars
 			if ( feed.expiring && ( feed.status.startsWith( 'PID' ) ) ) {
 				await feed.extend()
 			}
-		} ) ]
+		} )
 		return await Promise.all( promises )
 	}
 }
