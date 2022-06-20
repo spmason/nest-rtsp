@@ -177,7 +177,7 @@ class FeedClient extends EventEmitter {
 			const client = await this.#getGoogleClient()
 			const { streamExtensionToken } = this.#stream
 			const { data } = await client.enterprises.devices.executeCommand( {
-				name: this.id,
+				name: this.#id,
 				requestBody: {
 					command: 'sdm.devices.commands.CameraLiveStream.ExtendRtspStream',
 					params: {
@@ -198,7 +198,7 @@ class FeedClient extends EventEmitter {
 			const client = await this.#getGoogleClient()
 			const { mediaSessionId } = this.#stream
 			const { data } = await client.enterprises.devices.executeCommand( {
-				name: this.id,
+				name: this.#id,
 				requestBody: {
 					command: 'sdm.devices.commands.CameraLiveStream.ExtendWebRtcStream',
 					params: {
