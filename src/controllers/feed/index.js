@@ -110,9 +110,16 @@ class FeedClient extends EventEmitter {
 		}
 		catch ( error ) {
 			this.#debugger( `Failed to get stream for ${path} due to error: ${error.message}` )
-			this.#debugger( `Will retry to start ${path} in 5 seconds` )
-			this.#setStatus( 'Retrying RTSP' )
-			await sleep( 5000 )
+			if ( error.message.includes( 'Rate limited' ) ) {
+				this.#debugger( `Will retry to start ${path} in 60 seconds` )
+				this.#setStatus( 'Retrying RTSP' )
+				await sleep( 60000 )
+			}
+			else {
+				this.#debugger( `Will retry to start ${path} in 5 seconds` )
+				this.#setStatus( 'Retrying RTSP' )
+				await sleep( 5000 )
+			}
 			return await this.#startRTSP( path )
 		}
 		if ( !this.#stream || !this.#stream.expiresAt || !this.#stream.streamUrls ) {
@@ -158,10 +165,17 @@ class FeedClient extends EventEmitter {
 		}
 		catch ( error ) {
 			this.#debugger( `Failed to get stream for ${path} due to error: ${error.message}` )
-			this.#debugger( `Will retry to start ${path} in 5 seconds` )
-			this.#setStatus( 'Retrying WebRTC' )
-			await sleep( 5000 )
-			return await this.#startRTSP( path )
+			if ( error.message.includes( 'Rate limited' ) ) {
+				this.#debugger( `Will retry to start ${path} in 60 seconds` )
+				this.#setStatus( 'Retrying WebRTC' )
+				await sleep( 60000 )
+			}
+			else {
+				this.#debugger( `Will retry to start ${path} in 5 seconds` )
+				this.#setStatus( 'Retrying WebRTC' )
+				await sleep( 5000 )
+			}
+			return await this.#startWebRTC( path )
 		}
 		if ( !this.#stream || !this.#stream.expiresAt || !this.#stream.streamUrls ) {
 			this.#debugger( `Failed to get stream for ${path} without an error` )
