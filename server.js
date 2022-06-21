@@ -2,303 +2,268 @@ const { providers, controllers } = require( './src' )
 const { http, rtsp, configuration } = providers
 const knex = require( 'knex' )
 const db = knex( configuration.get( 'database' ) )
-const merge = require( 'lodash.merge' )
-const { GA_SDM_PID } = process.env
 const clc = require( 'cli-color' )
-const moment = require( 'moment' )
+const debug = require( 'debug' )
+
 http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) => {
-	console.log( `HTTP Server listening on 0.0.0.0:${port}` )
-	const rtsps = await rtsp.init( configuration.get( 'rtsp' ) )
-	console.log( `RTSP Server listening for clients on 0.0.0.0:${rtsps.ports.client} and listening for streams on 0.0.0.0:${rtsps.ports.server}` )
-	const processes = new Map()
 	const streams = new Map()
-	const uris = new Map()
-	const settings = async () => {
-		const rows = await db.table( 'settings' )
-		const fromDb = Object.assign( {}, ...rows.map( r => {
-			return { [r.key]: JSON.parse( r.value ) }
-		} ) )
-		const settings = merge( {}, {
-			google_access_tokens: null,
-			rtsp_map: {},
-			rtsp_paths: {},
-			rtsps_snapshot: []
-		}, fromDb )
-		return settings
-	}
-	const devices = async google_access_tokens => {
-		const { client:gc, google } = await controllers.google.setCredentials( google_access_tokens )
-		// here we are going to check our authentication credentials
-		const client = google.smartdevicemanagement( {
-			version: 'v1',
-			auth: gc
-		} )
+	const dbg = debug( 'nest-rtsp:app' )
+	const mqtt = new controllers.mqtt()
+	const rtsps = await rtsp.init( configuration.get( 'rtsp' ) )
+	dbg( `RTSP Server listening for clients on 0.0.0.0:${rtsps.ports.client} and listening for streams on 0.0.0.0:${rtsps.ports.server}` )
+	const app = new controllers.app( server, port, db )
+	// setup the event listeners for specific requests
+	mqtt.on( 'updated', app.tick.bind( app, streams, mqtt ) )
+	app.on( 'gaurl', async ( id, args, settings, respond, error ) => {
 		try {
-			const { data: list } = await client.enterprises.devices.list( { parent: [ 'enterprises', GA_SDM_PID ].join( '/' ) } )
-			const { devices } = list
-			const cameras = devices.filter( d => Object.keys( d.traits ).includes( 'sdm.devices.traits.CameraLiveStream' ) )
-			return cameras
-		}
-		catch ( error ) {
-			console.log( `Failed to load device list due to error: ${error.message}` )
-			const lines = error.stack.split( '\n' ).map( l => l.trim() )
-			let i = 1
-			let lined = false
-			while ( i < lines.length && !lined ) {
-				if ( !lined ) {
-					lined = lines[i].includes( ':' )
-				}
-				console.error( clc.redBright( lines[i] ) )
-				i ++
-			}
-			return []
-		}
-	}
-	const tick = async () => {
-		const current = await settings()
-		server.broadcast( 'status', current )
-		const alive = Object.assign( {}, ...[ ...processes ].map( ( [ id, cp ] )=> {
-			return { [id]: cp.pid }
-		} ) )
-		server.broadcast( 'processes', alive )
-	}
-	const tock = async () => {
-		const { rtsp_paths } = await settings()
-		const sa = [ ...streams ]
-		for ( let i = 0; i < sa.length; i++ ) {
-			const [ id, info ] = sa[i]
-			const path = rtsp_paths[id]
-			if ( !processes.has( id ) ) {
-				// the stream process is missing. remove it and try to restart it
-				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} Process is missing. Clearing and restarting.` )
-				streams.delete( id )
-				process.nextTick( () => {
-					startRTSP( id, true )
-				} )
-			}
-			else {
-				// the stream process exists. check if it is running and then continue
-				const cp = processes.get( id )
-				if ( null !== cp.exitCode ) {
-					// the stream is not running. clear the process and info, and restart the stream
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} Process is ${clc.redBright( 'DEAD' )}. Clearing and restarting.` )
-					streams.delete( id )
-					processes.delete( id )
-					process.nextTick( () => {
-						startRTSP( id, true )
-					} )
-				}
-				else {
-					const { expiresAt, streamExtensionToken } = info
-					const expiresAtMoment = moment( expiresAt )
-					const expiresAtThresholdMoment = expiresAtMoment.clone().subtract( 1, 'minute' )
-					const now = moment()
-					if ( now.isSameOrAfter( expiresAtThresholdMoment ) ) {
-						console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} Extending Stream` )
-						try {
-							const results = await controllers.google.extendRTSPStream( id, streamExtensionToken )
-							const updated = merge( {}, info, results )
-							streams.set( id, updated )
-						}
-						catch ( error ) {
-							console.log( `${clc.bgBlue.white( '[GOOGLE]' )}${clc.yellowBright( '[' + path + ']' )} failed to extend stream due to error: ${clc.redBright( error.message )}` )
-						}
-					}
-				}
-			}
-		}
-	}
-	const startRTSP = async ( id, booting, retry = 0 ) => {
-		const { rtsp_paths } = await settings()
-		const port = parseInt( rtsps.ports.server )
-		const path = rtsp_paths[id]
-		if ( !processes.has( id ) ) {
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Getting stream URI for ${ clc.whiteBright( id ) }` )}` )
-			let stream
-			try {
-				stream = await controllers.google.getRTSPStream( id )
-			}
-			catch ( error ) {
-				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( `Failed to get stream for stream for ${ clc.whiteBright( id ) }` )} due to error ${clc.yellowBright( error.message )}` )
-				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream in 60 seconds' )}` )
-				setTimeout( () => {
-					startRTSP( id, true, retry + 1 )
-				}, 60000 )
-			}
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Waiting 5 seconds to start stream for ${ clc.whiteBright( id ) }` )}` )
-			await controllers.sleep( 5000 )
-			console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.greenBright( `Starting stream for ${ clc.whiteBright( id ) }` )}` )
-			const streamUrl = stream.streamUrls.rtspUrl
-			if ( uris.has( path ) ) {
-				if ( uris.get( path ) === streamUrl ) {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( `URI for ${ clc.whiteBright( id ) }` )} was already used / consumed and should not have been re-issued!` )
-				}
-			}
-			uris.set( path, streamUrl )
-			streams.set( id, stream )
-			rtsps.add( path )
-			const { fp } = controllers.streamer.streamOut( streamUrl, port, path )
-			processes.set( id, fp )
-			if ( fp.stdout ) {
-				fp.stdout.on( 'data', data => {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyan( data )}` )
-				} )
-			}
-			if ( fp.stderr ) {
-				fp.stderr.on( 'data', data => {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
-					if ( 'string' === typeof data && data.includes( 'The specified session has been invalidated for some reason.' ) ) {
-						console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
-					}
-				} )
-			}
-			fp.on( 'exit', code => {
-				console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
-				processes.delete( id )
-				streams.delete( id )
-				if ( ![ 255 ].includes( parseInt( code ) ) && 5 > retry ) {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
-					process.nextTick( () => {
-						startRTSP( id, true, retry + 1 )
-					} )
-				}
-				else if ( ![ 255 ].includes( parseInt( code ) ) && 10 > retry ) {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream in 30 seconds' )}` )
-					setTimeout( () => {
-						startRTSP( id, true, retry + 1 )
-					}, 30000 )
-				}
-				else {
-					console.log( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream in 60 seconds' )}` )
-					setTimeout( () => {
-						startRTSP( id, true, retry + 1 )
-					}, 60000 )
-				}
-			} )
-		}
-		if ( !booting ) {
-			saveRTSPStatus()
-		}
-	}
-	const stopRTSP = async ( id, booting ) => {
-		if ( processes.has( id ) ) {
-			console.log( `stopping stream for ${id}` )
-			processes.get( id ).on( 'exit', () => {
-				if ( !booting ) {
-					saveRTSPStatus()
-				}
-			} )
-			processes.get( id ).kill( 'SIGINT' )
-			const { rtsp_paths } = await settings()
-			const path = rtsp_paths[id]
-			rtsps.remove( path )
-			processes.delete( id )
-			streams.delete( id )
-		}
-		if ( !booting ) {
-			saveRTSPStatus()
-		}
-	}
-	const saveRTSPStatus = async () => {
-		const alive = [ ...processes ].map( ( [ id, cp ] )=> { // eslint-disable-line no-unused-vars
-			return id
-		} )
-		const { count } = await db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsps_snapshot' ).first()
-		if ( 0 < parseInt( count ) ) {
-			await db.table( 'settings' ).update( { value: JSON.stringify( alive ) } ).where( 'key', 'rtsps_snapshot' )
-		}
-		else {
-			await db.table( 'settings' ).insert( { key: 'rtsps_snapshot', value: JSON.stringify( alive ) } )
-		}
-	}
-	const { google_access_tokens, rtsps_snapshot } = await settings()
-	if ( null !== google_access_tokens ) {
-		try {
-			await devices( google_access_tokens )
+			const url = await controllers.google.getRedirectUrl( id )
+			dbg( `Got Google OAuth URL "${url}"` )
+			respond( id, url )
 		}
 		catch ( err ) {
-			console.log( `Authentication failed due to error: ${err.message}. Should clear credentials.` )
+			error( id, err )
+		}
+	} )
+	app.on( 'pcmurl', async ( id, args, settings, respond, error ) => {
+		try {
+			const url = await controllers.google.getPCMRedirectUrl( id )
+			dbg( `Got Google Device Manager URL "${url}"` )
+			respond( id, url )
+		}
+		catch ( err ) {
+			error( id, err )
+		}
+	} )
+	app.on( 'listDevices', async ( id, args, settings, respond, error ) => {
+		const { google_access_tokens } = settings
+		try {
+			const list = await controllers.google.getDevices( google_access_tokens )
+			respond( id, list )
+		}
+		catch ( err ) {
+			await db.table( 'settings' ).where( 'key', 'google_access_tokens' ).del()
+			error( id, err )
+		}
+	} )
+	app.on( 'handleOauthResponse', async ( id, args, settings, respond, error ) => {
+		let tokens
+		try {
+			const ret = await controllers.google.handleResponse( args )
+			tokens = ret.tokens
+		}
+		catch ( err ) {
+			error( id, err )
+		}
+		if ( !tokens ) {
+			return error( id, new Error( 'Authentication Failed' ) )
+		}
+		const { count } = await db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'google_access_tokens' ).first()
+		if ( 0 < parseInt( count ) ) {
+			await db.table( 'settings' ).update( { value: JSON.stringify( tokens ) } ).where( 'key', 'google_access_tokens' )
+		}
+		else {
+			await db.table( 'settings' ).insert( { key: 'google_access_tokens', value: JSON.stringify( tokens ) } )
+		}
+		respond( id, tokens )
+	} )
+	app.on( 'saveRTSP', async ( id, args, settings, respond ) => {
+		const { count } = db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_map' ).first()
+		if ( 0 < parseInt( count ) ) {
+			await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_map' )
+		}
+		else {
+			await db.table( 'settings' ).insert( { key: 'rtsp_map', value: JSON.stringify( args ) } )
+		}
+		respond( id, 'OK' )
+	} )
+	app.on( 'saveRTSPPath', async ( id, args, settings, respond ) => {
+		const { count } = db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_paths' ).first()
+		if ( 0 < parseInt( count ) ) {
+			await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_paths' )
+		}
+		else {
+			await db.table( 'settings' ).insert( { key: 'rtsp_paths', value: JSON.stringify( args ) } )
+		}
+		respond( id, 'OK' )
+	} )
+	app.on( 'startRTSP', async ( rid, args, settings, respond, error ) => {
+		const id = args
+		if ( streams.has( id ) ) {
+			return error( rid, new Error( 'Stream Already Exists' ) )
+		}
+		streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+		streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+		await streams.get( id ).start()
+		await app.snapshot( streams )
+		return respond( rid, 'OK' )
+	} )
+	app.on( 'restartRTSP', async ( rid, args, settings, respond, error ) => {
+		const id = args
+		if ( !streams.has( id ) ) {
+			return error( rid, new Error( 'No such stream' ) )
+		}
+		await streams.get( id ).restart()
+		return respond( rid, 'OK' )
+	} )
+	app.on( 'stopRTSP', async ( rid, args, settings, respond, error ) => {
+		const id = args
+		if ( !streams.has( id ) ) {
+			return error( rid, new Error( 'No such stream' ) )
+		}
+		await streams.get( id ).stop()
+		streams.delete( id )
+		await app.tick( streams, mqtt )
+		await app.snapshot( streams )
+		return respond( rid, 'OK' )
+	} )
+	app.on( 'saveMQTT', async ( rid, args, settings, respond, error ) => {
+		const { count } = db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'mqtt_settings' ).first()
+		if ( 0 < parseInt( count ) ) {
+			await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'mqtt_settings' )
+		}
+		else {
+			await db.table( 'settings' ).insert( { key: 'mqtt_settings', value: JSON.stringify( args ) } )
+		}
+		respond( rid, 'OK' )
+	} )
+	app.on( 'startMQTT', async ( rid, args, settings, respond, error ) => {
+		const res = await mqtt.start( settings.mqtt_settings )
+		if ( res ) {
+			respond( rid, 'OK' )
+		}
+		else {
+			error( rid, 'Failed to start' )
+		}
+	} )
+	app.on( 'restartMQTT', async ( rid, args, settings, respond, error ) => {
+		const res = await mqtt.restart()
+		if ( res ) {
+			respond( rid, 'OK' )
+		}
+		else {
+			error( rid, 'Failed to restart' )
+		}
+	} )
+	app.on( 'stopMQTT', async ( rid, args, settings, respond, error ) => {
+		const res = await mqtt.stop()
+		if ( res ) {
+			respond( rid, 'OK' )
+		}
+		else {
+			error( rid, 'Failed to stop' )
+		}
+	} )
+	mqtt.on( 'start', async ( payload, all ) => {
+		const { google_access_tokens, rtsp_paths } = await app.getSettings()
+		if ( 'string' === typeof all && 'all' === all ) {
+			dbg( 'Got Start All command from MQTT' )
+			const list = await controllers.google.getDevices( google_access_tokens )
+			const ids = list.map( c => c.name )
+			for ( let i = 0; i < ids.length; i++ ) {
+				const id = ids[i]
+				if ( !streams.has( id ) ) {
+					streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+					streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+					await streams.get( id ).start()
+				}
+			}
+			dbg( 'Started All available cameras' )
+		}
+		else if ( payload.path ){
+			dbg( `Got Start Command for path "${payload.path}"` )
+			for ( const id in rtsp_paths ) {
+				if ( rtsp_paths[id] === payload.path ) {
+					if ( !streams.has( id ) ) {
+						streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+						streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+						await streams.get( id ).start()
+					}
+				}
+			}
+		}
+		else if ( payload.id ){
+			dbg( `Got Start Command for id "${payload.id}"` )
+			if ( !streams.has( payload.id ) ) {
+				streams.set( payload.id, new controllers.feed( db, payload.id, rtsps.ports.server, mqtt ) )
+				streams.get( payload.id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+				await streams.get( payload.id ).start()
+			}
+		}
+		await app.tick( streams, mqtt )
+		await app.snapshot( streams )
+	} )
+	mqtt.on( 'stop', async ( payload, all ) => {
+		const { rtsp_paths } = await app.getSettings()
+		if ( 'string' === typeof all && 'all' === all ) {
+			dbg( 'Got Stop All command from MQTT' )
+			const toStop = [ ...streams ]
+			for ( let i = 0; i < toStop.length; i++ ) {
+				const [ id, stream ] = toStop[i]
+				await stream.stop()
+				streams.delete( id )
+				await app.tick( streams, mqtt )
+			}
+		}
+		else if ( payload.path ){
+			dbg( `Got Stop Command for path "${payload.path}"` )
+			for ( const id in rtsp_paths ) {
+				if ( rtsp_paths[id] === payload.path ) {
+					if ( streams.has( id ) ) {
+						await streams.get( id ).stop()
+						streams.delete( id )
+					}
+				}
+			}
+		}
+		else if ( payload.id ){
+			dbg( `Got Stop Command for id "${payload.id}"` )
+			if ( streams.has( payload.id ) ) {
+				await streams.get( payload.id ).stop()
+				streams.delete( payload.id )
+			}
+		}
+		await app.tick( streams, mqtt )
+		await app.snapshot( streams )
+	} )
+	mqtt.on( 'failed', error => {
+		app.broadcast( 'notification', {
+			group: 'errors',
+			text: `MQTT Stopped due to error: ${error.message}`,
+			ignoreDuplicates: true
+		} )
+	} )
+	const { google_access_tokens, rtsps_snapshot, mqtt_settings } = await app.getSettings()
+	if ( mqtt_settings.enabled ) {
+		await mqtt.start( mqtt_settings )
+	}
+	if ( null !== google_access_tokens ) {
+		// Checking to see if the existing OAuth session is valid
+		dbg( 'Checking to see if the existing OAuth session is valid' )
+		try {
+			await controllers.google.getDevices( google_access_tokens )
+		}
+		catch ( err ) {
+			dbg( `Authentication failed due to error: ${err.message}. Should clear credentials.` )
 			await db.table( 'settings' ).where( 'key', 'google_access_tokens' ).del()
 		}
 	}
-	else {
-		console.log( 'Google Access Credentials not Detected' )
-	}
-	rtsps_snapshot.map( id => startRTSP( id, true ) )
-	server.on( 'request', ( { id, cmd, args } ) => {
-		settings().then( ( { google_access_tokens } ) => {
-			switch ( cmd ) {
-				case 'ping': server.emit( `response-${id}`, 'pong' ); break
-				case 'refresh': tick( args ).then( () => {
-					server.emit( `response-${id}`, 'OK' )
-				} ); break
-				case 'gaurl': controllers.google.getRedirectUrl( id ).then( url => {
-					server.emit( `response-${id}`, url )
-				} ); break
-				case 'pcmurl': controllers.google.getPCMRedirectUrl( id ).then( url => {
-					server.emit( `response-${id}`, url )
-				} ); break
-				case 'listDevices': devices( google_access_tokens ).then( list => {
-					server.emit( `response-${id}`, list )
-				} ).catch( err => {
-					server.emit( `error-${id}`, err.message )
-				} ); break
-				case 'handleOauthResponse': controllers.google.handleResponse( args ).then( async ( { tokens } ) => {
-					if ( tokens ) {
-						const { count } = await db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'google_access_tokens' ).first()
-						if ( 0 < parseInt( count ) ) {
-							await db.table( 'settings' ).update( { value: JSON.stringify( tokens ) } ).where( 'key', 'google_access_tokens' )
-						}
-						else {
-							await db.table( 'settings' ).insert( { key: 'google_access_tokens', value: JSON.stringify( tokens ) } )
-						}
-						server.emit( `response-${id}`, tokens )
-					}
-					else {
-						server.emit( `error-${id}`, new Error( 'Authentication Failed' ) )
-					}
-				} ); break
-				case 'logout': db.table( 'settings' ).where( 'key', 'google_access_tokens' ).del().then( () => {
-					server.emit( `response-${id}`, 'OK' )
-				} ); break
-				case 'saveRTSP': db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_map' ).first().then( async ( { count } ) => {
-					if ( 0 < parseInt( count ) ) {
-						await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_map' )
-					}
-					else {
-						await db.table( 'settings' ).insert( { key: 'rtsp_map', value: JSON.stringify( args ) } )
-					}
-					server.emit( `response-${id}`, 'OK' )
-				} ); break
-				case 'saveRTSPPath': db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'rtsp_paths' ).first().then( async ( { count } ) => {
-					if ( 0 < parseInt( count ) ) {
-						await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'rtsp_paths' )
-					}
-					else {
-						await db.table( 'settings' ).insert( { key: 'rtsp_paths', value: JSON.stringify( args ) } )
-					}
-					server.emit( `response-${id}`, 'OK' )
-				} ); break
-				case 'startRTSP': startRTSP( args ).then( () => {
-					server.emit( `response-${id}`, 'OK' )
-				} ); break
-				case 'restartRTSP': stopRTSP( args ).then( () => {
-					startRTSP( args ).then( () => {
-						server.emit( `response-${id}`, 'OK' )
-					} )
-				} ); break
-				case 'stopRTSP': stopRTSP( args ).then( () => {
-					server.emit( `response-${id}`, 'OK' )
-				} ); break
-				default: server.emit( `error-${id}`, new Error( `No such command "${cmd}"` ) )
-			}
-		} )
+	dbg( 'Loading Streams from Persistance Snapshot' )
+	rtsps_snapshot.map( async id => {
+		if ( !streams.has( id ) ) {
+			dbg( `Loading Stream for ${id}` )
+			streams.set( id, new controllers.feed( db, id, rtsps.ports.server ) )
+			streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+			await streams.get( id ).start()
+			dbg( `Loaded Stream for ${id}` )
+		}
 	} )
-	// once per second, check the status and forward it to the GUI
-	setInterval( tick, 1000 )
-	setInterval( tock, 30000 )
-	tick()
-	tock()
+	dbg( 'Loaded Streams from Persistance Snapshot' )
+	dbg( 'Starting Status Broadcast' )
+	setInterval( app.tick.bind( app, streams, mqtt ), 1000 )
+	setInterval( controllers.feed.tock, 30000, streams )
+	dbg( 'Sending First Status Update' )
+	app.tick( streams, mqtt )
+	controllers.feed.tock( streams )
 } ).catch( error => {
 	console.error( clc.redBright( error.message ) )
 	const lines = error.stack.split( '\n' ).map( l => l.trim() )

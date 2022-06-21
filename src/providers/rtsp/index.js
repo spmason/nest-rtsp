@@ -36,10 +36,12 @@ class RTSPServer extends EventEmitter {
 		}
 	}
 
-	#clientCheckMount = async function( req ) {
-		const url = new URL( req.uri )
-		return ( this.#mounts.has( url.pathname ) ) ? true : 404
-	}
+	// #clientCheckMount = async function( req ) {
+	// 	const url = new URL( req.uri )
+	// 	return ( this.#mounts.has( url.pathname ) ) ? true : 404
+	// }
+
+	#clientCheckMount = () => true
 
 	#serverCheckMount = () => true
 

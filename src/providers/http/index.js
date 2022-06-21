@@ -42,7 +42,12 @@ class HTTP_Server extends EventEmitter {
 					} )
 				}
 				catch ( error ) {
-					console.log( `Failed to process Google Authentication due to error: ${error.message}` )
+					if ( error && error.message ) {
+						console.log( `Failed to process Google Authentication due to error: ${error.message}` )
+					}
+					else {
+						console.log( 'Failed to process Google Authentication due to unknown error', error )
+					}
 					// do nothing
 				}
 			}
@@ -88,7 +93,7 @@ class HTTP_Server extends EventEmitter {
 				socket.emit( `response-${id}`, res )
 			}
 			catch ( err ) {
-				socket.emit( `error-${id}`, err.message )
+				socket.emit( `error-${id}`, err ? err.message : 'an unknown error has occured' )
 			}
 		} )
 	}
