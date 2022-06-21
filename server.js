@@ -3,16 +3,17 @@ const { http, rtsp, configuration } = providers
 const knex = require( 'knex' )
 const db = knex( configuration.get( 'database' ) )
 const clc = require( 'cli-color' )
-// const moment = require( 'moment' )
 const debug = require( 'debug' )
 
 http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) => {
 	const streams = new Map()
 	const dbg = debug( 'nest-rtsp:app' )
+	const mqtt = new controllers.mqtt()
 	const rtsps = await rtsp.init( configuration.get( 'rtsp' ) )
 	dbg( `RTSP Server listening for clients on 0.0.0.0:${rtsps.ports.client} and listening for streams on 0.0.0.0:${rtsps.ports.server}` )
 	const app = new controllers.app( server, port, db )
 	// setup the event listeners for specific requests
+	mqtt.on( 'updated', app.tick.bind( app, streams, mqtt ) )
 	app.on( 'gaurl', async ( id, args, settings, respond, error ) => {
 		try {
 			const url = await controllers.google.getRedirectUrl( id )
@@ -90,8 +91,8 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		if ( streams.has( id ) ) {
 			return error( rid, new Error( 'Stream Already Exists' ) )
 		}
-		streams.set( id, new controllers.feed( db, id, rtsps.ports.server ) )
-		streams.get( id ).on( 'updated', app.tick.bind( app, streams ) )
+		streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+		streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
 		await streams.get( id ).start()
 		await app.snapshot( streams )
 		return respond( rid, 'OK' )
@@ -111,11 +112,130 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		}
 		await streams.get( id ).stop()
 		streams.delete( id )
-		await app.tick( streams )
+		await app.tick( streams, mqtt )
 		await app.snapshot( streams )
 		return respond( rid, 'OK' )
 	} )
-	const { google_access_tokens, rtsps_snapshot } = await app.getSettings()
+	app.on( 'saveMQTT', async ( rid, args, settings, respond, error ) => {
+		const { count } = db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'mqtt_settings' ).first()
+		if ( 0 < parseInt( count ) ) {
+			await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'mqtt_settings' )
+		}
+		else {
+			await db.table( 'settings' ).insert( { key: 'mqtt_settings', value: JSON.stringify( args ) } )
+		}
+		respond( rid, 'OK' )
+	} )
+	app.on( 'startMQTT', async ( rid, args, settings, respond, error ) => {
+		const res = await mqtt.start( settings.mqtt_settings )
+		if ( res ) {
+			respond( rid, 'OK' )
+		}
+		else {
+			error( rid, 'Failed to start' )
+		}
+	} )
+	app.on( 'restartMQTT', async ( rid, args, settings, respond, error ) => {
+		const res = await mqtt.restart()
+		if ( res ) {
+			respond( rid, 'OK' )
+		}
+		else {
+			error( rid, 'Failed to restart' )
+		}
+	} )
+	app.on( 'stopMQTT', async ( rid, args, settings, respond, error ) => {
+		const res = await mqtt.stop()
+		if ( res ) {
+			respond( rid, 'OK' )
+		}
+		else {
+			error( rid, 'Failed to stop' )
+		}
+	} )
+	mqtt.on( 'start', async ( payload, all ) => {
+		const { google_access_tokens, rtsp_paths } = await app.getSettings()
+		if ( 'string' === typeof all && 'all' === all ) {
+			dbg( 'Got Start All command from MQTT' )
+			const list = await controllers.google.getDevices( google_access_tokens )
+			const ids = list.map( c => c.name )
+			for ( let i = 0; i < ids.length; i++ ) {
+				const id = ids[i]
+				if ( !streams.has( id ) ) {
+					streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+					streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+					await streams.get( id ).start()
+				}
+			}
+			dbg( 'Started All available cameras' )
+		}
+		else if ( payload.path ){
+			dbg( `Got Start Command for path "${payload.path}"` )
+			for ( const id in rtsp_paths ) {
+				if ( rtsp_paths[id] === payload.path ) {
+					if ( !streams.has( id ) ) {
+						streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+						streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+						await streams.get( id ).start()
+					}
+				}
+			}
+		}
+		else if ( payload.id ){
+			dbg( `Got Start Command for id "${payload.id}"` )
+			if ( !streams.has( payload.id ) ) {
+				streams.set( payload.id, new controllers.feed( db, payload.id, rtsps.ports.server, mqtt ) )
+				streams.get( payload.id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
+				await streams.get( payload.id ).start()
+			}
+		}
+		await app.tick( streams, mqtt )
+		await app.snapshot( streams )
+	} )
+	mqtt.on( 'stop', async ( payload, all ) => {
+		const { rtsp_paths } = await app.getSettings()
+		if ( 'string' === typeof all && 'all' === all ) {
+			dbg( 'Got Stop All command from MQTT' )
+			const toStop = [ ...streams ]
+			for ( let i = 0; i < toStop.length; i++ ) {
+				const [ id, stream ] = toStop[i]
+				await stream.stop()
+				streams.delete( id )
+				await app.tick( streams, mqtt )
+			}
+		}
+		else if ( payload.path ){
+			dbg( `Got Stop Command for path "${payload.path}"` )
+			for ( const id in rtsp_paths ) {
+				if ( rtsp_paths[id] === payload.path ) {
+					if ( streams.has( id ) ) {
+						await streams.get( id ).stop()
+						streams.delete( id )
+					}
+				}
+			}
+		}
+		else if ( payload.id ){
+			dbg( `Got Stop Command for id "${payload.id}"` )
+			if ( streams.has( payload.id ) ) {
+				await streams.get( payload.id ).stop()
+				streams.delete( payload.id )
+			}
+		}
+		await app.tick( streams, mqtt )
+		await app.snapshot( streams )
+	} )
+	mqtt.on( 'failed', error => {
+		app.broadcast( 'notification', {
+			group: 'errors',
+			text: `MQTT Stopped due to error: ${error.message}`,
+			ignoreDuplicates: true
+		} )
+	} )
+	const { google_access_tokens, rtsps_snapshot, mqtt_settings } = await app.getSettings()
+	if ( mqtt_settings.enabled ) {
+		await mqtt.start( mqtt_settings )
+	}
 	if ( null !== google_access_tokens ) {
 		// Checking to see if the existing OAuth session is valid
 		dbg( 'Checking to see if the existing OAuth session is valid' )
@@ -132,17 +252,17 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		if ( !streams.has( id ) ) {
 			dbg( `Loading Stream for ${id}` )
 			streams.set( id, new controllers.feed( db, id, rtsps.ports.server ) )
-			streams.get( id ).on( 'updated', app.tick.bind( app, streams ) )
+			streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
 			await streams.get( id ).start()
 			dbg( `Loaded Stream for ${id}` )
 		}
 	} )
 	dbg( 'Loaded Streams from Persistance Snapshot' )
 	dbg( 'Starting Status Broadcast' )
-	setInterval( app.tick.bind( app, streams ), 1000 )
+	setInterval( app.tick.bind( app, streams, mqtt ), 1000 )
 	setInterval( controllers.feed.tock, 30000, streams )
 	dbg( 'Sending First Status Update' )
-	app.tick( streams )
+	app.tick( streams, mqtt )
 	controllers.feed.tock( streams )
 } ).catch( error => {
 	console.error( clc.redBright( error.message ) )

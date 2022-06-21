@@ -6,6 +6,7 @@ const sleep = require( '../sleep' )
 const streamer = require( '../streamer' )
 const moment = require( 'moment' )
 const clc = require( 'cli-color' )
+const getSettings = require( '../../getSettings' )
 
 class FeedClient extends EventEmitter {
 	#id
@@ -19,8 +20,9 @@ class FeedClient extends EventEmitter {
 	#path
 	#stream
 	#stopped = false
+	#mqtt
 
-	constructor( db, id, port ) {
+	constructor( db, id, port, mqtt ) {
 		super()
 		this.#db = db
 		this.#id = id
@@ -28,6 +30,7 @@ class FeedClient extends EventEmitter {
 		this.#debugger = debug( `nest-rtsp:controller:feed:${id.substr( lastSlashPost )}` )
 		this.#status = 'Initializing'
 		this.#serverPort = port
+		this.#mqtt = mqtt
 	}
 
 	get status() {
@@ -44,17 +47,7 @@ class FeedClient extends EventEmitter {
 	}
 
 	#getSettings = async function() {
-		const rows = await this.#db.table( 'settings' )
-		const fromDb = Object.assign( {}, ...rows.map( r => {
-			return { [r.key]: JSON.parse( r.value ) }
-		} ) )
-		const settings = merge( {}, {
-			google_access_tokens: null,
-			rtsp_map: {},
-			rtsp_paths: {},
-			rtsps_snapshot: []
-		}, fromDb )
-		return settings
+		return await getSettings( this.#db )
 	}
 
 	#getGoogleClient = async function() {
@@ -100,6 +93,13 @@ class FeedClient extends EventEmitter {
 	#setStatus = status => {
 		this.#status = status
 		this.emit( 'updated' )
+		if ( this.#mqtt ) {
+			this.#mqtt.publish( 'feed-status', {
+				feed: this.#id,
+				path: this.#path,
+				status
+			} )
+		}
 	}
 
 	#startRTSP = async function( path ) {

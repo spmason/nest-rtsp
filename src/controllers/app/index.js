@@ -1,6 +1,7 @@
 const { EventEmitter } = require( 'events' )
 const merge = require( 'lodash.merge' )
 const debug = require( 'debug' )
+const getSettings = require( '../../getSettings' )
 
 class AppController extends EventEmitter {
 	#server
@@ -47,17 +48,7 @@ class AppController extends EventEmitter {
 	}
 
 	async getSettings() {
-		const rows = await this.#db.table( 'settings' )
-		const fromDb = Object.assign( {}, ...rows.map( r => {
-			return { [r.key]: JSON.parse( r.value ) }
-		} ) )
-		const settings = merge( {}, {
-			google_access_tokens: null,
-			rtsp_map: {},
-			rtsp_paths: {},
-			rtsps_snapshot: []
-		}, fromDb )
-		return settings
+		return await getSettings( this.#db )
 	}
 
 	#respond = function( rid, ...args ) {
@@ -76,9 +67,10 @@ class AppController extends EventEmitter {
 		this.#server.broadcast( ...args )
 	}
 
-	async tick( streams ) {
+	async tick( streams, mqtt ) {
 		const current = await this.getSettings()
 		this.broadcast( 'status', current )
+		this.broadcast( 'mqtt', mqtt.running )
 		if ( streams ) {
 			const alive = Object.assign( {}, ...[ ...streams ].map( ( [ id, cp ] )=> {
 				return { [id]: cp.status }

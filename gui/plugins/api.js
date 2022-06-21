@@ -30,6 +30,12 @@ class ApiPlugin {
 				parent.client.on( 'processes', payload => {
 					this.$emit( 'processes', payload )
 				} )
+				parent.client.on( 'mqtt', payload => {
+					this.$emit( 'mqtt', payload )
+				} )
+				parent.client.on( 'notification', payload => {
+					this.$emit( 'notification', payload )
+				} )
 			},
 			methods: {
 				async request( cmd = 'ping', args = null, timeout = 10000 ) {

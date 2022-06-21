@@ -17,6 +17,138 @@
       </v-toolbar-title>
       <v-spacer />
       <v-btn
+        icon
+        color="primary"
+        href="https://nest-rtsp.jak.guru/"
+        target="_blank"
+      >
+        <v-icon>mdi-lifebuoy</v-icon>
+      </v-btn>
+      <v-menu
+        v-if="status.mqtt_settings"
+        ref="mqttMenu"
+        v-model="mqttMenu"
+        offset-y
+        :close-on-content-click="false"
+      >
+        <template #activator="{ on, attrs }">
+          <v-btn
+            :color="mqttColor"
+            x-small
+            dark
+            v-bind="attrs"
+            v-on="on"
+          >
+            MQTT
+          </v-btn>
+        </template>
+        <v-list
+          tag="form"
+          action="#"
+          method="POST"
+          @submit="saveMQTT"
+        >
+          <v-list-item>
+            <v-list-item-content>
+              <v-text-field
+                v-model="mqtt.host"
+                clearable
+                :disabled="!$api.connected || processing || mqtt.running"
+                dense
+                hide-details
+                label="MQTT Host"
+              />
+            </v-list-item-content>
+          </v-list-item>
+          <v-list-item>
+            <v-list-item-content>
+              <v-text-field
+                v-model="mqtt.user"
+                clearable
+                :disabled="!$api.connected || processing || mqtt.running"
+                dense
+                hide-details
+                label="MQTT User"
+              />
+            </v-list-item-content>
+          </v-list-item>
+          <v-list-item>
+            <v-list-item-content>
+              <v-text-field
+                v-model="mqtt.password"
+                clearable
+                :disabled="!$api.connected || processing || mqtt.running"
+                dense
+                hide-details
+                label="MQTT Password"
+              />
+            </v-list-item-content>
+          </v-list-item>
+          <v-list-item>
+            <v-switch
+              v-model="mqtt.enabled"
+              clearable
+              :disabled="!$api.connected || processing || mqtt.running"
+              dense
+              hide-details
+              label="Enabled"
+            />
+          </v-list-item>
+          <v-list-item>
+            <v-btn
+              block
+              small
+              color="primary"
+              dark
+              :disabled="!$api.connected || processing || mqtt.running"
+              @submit="saveMQTT"
+              @click="saveMQTT"
+            >
+              Save
+            </v-btn>
+          </v-list-item>
+          <v-divider />
+          <v-list-item>
+            <v-list-item-content>
+              <div class="d-flex">
+                <v-btn
+                  fab
+                  x-small
+                  color="success"
+                  class="elevation-1"
+                  :disabled="!status.mqtt_settings.enabled || !$api.connected || processing || mqtt.running"
+                  @click="startMQTT"
+                >
+                  <v-icon>mdi-play</v-icon>
+                </v-btn>
+                <v-spacer />
+                <v-btn
+                  fab
+                  x-small
+                  color="warning"
+                  class="elevation-1"
+                  :disabled="!status.mqtt_settings.enabled || !$api.connected || processing || !mqtt.running"
+                  @click="restartMQTT"
+                >
+                  <v-icon>mdi-restart</v-icon>
+                </v-btn>
+                <v-spacer />
+                <v-btn
+                  fab
+                  x-small
+                  color="error"
+                  class="elevation-1"
+                  :disabled="!status.mqtt_settings.enabled || !$api.connected || processing || !mqtt.running"
+                  @click="stopMQTT"
+                >
+                  <v-icon>mdi-stop</v-icon>
+                </v-btn>
+              </div>
+            </v-list-item-content>
+          </v-list-item>
+        </v-list>
+      </v-menu>
+      <v-btn
         v-if="authenticated"
         icon
         color="error"
@@ -279,7 +411,13 @@ export default {
 		status: {
 			google_access_tokens: null,
 			rtsp_map: {},
-			rtsp_paths: {}
+			rtsp_paths: {},
+			mqtt_settings: {
+				enabled: false,
+				host: '',
+				user: '',
+				password: ''
+			}
 		},
 		devices: {
 			loading: false,
@@ -289,7 +427,15 @@ export default {
 		rtsp_map: {},
 		rtsp_paths: {},
 		focused: null,
-		processes: {}
+		processes: {},
+		mqttMenu: false,
+		mqtt: {
+			running: false,
+			enabled: false,
+			host: '',
+			user: '',
+			password: ''
+		}
 	} ),
 	computed: {
 		authenticated() {
@@ -357,6 +503,15 @@ export default {
 					value: '__actions'
 				}
 			]
+		},
+		mqttColor() {
+			switch ( true ) {
+				case this.mqtt.running: return 'success'
+				case !this.status.mqtt_settings: return 'grey darken-4'
+				case !this.status.mqtt_settings.enabled: return 'grey darken-2'
+				case this.status.mqtt_settings.enabled && !this.mqtt.running: return 'error'
+				default: return 'grey darken-4'
+			}
 		}
 	},
 	watch: {
@@ -381,6 +536,14 @@ export default {
 				}
 			}
 		},
+		'status.mqtt_settings'( latest ) {
+			if ( !this.mqttMenu ) {
+				const update = merge( {}, this.mqtt, latest )
+				for ( const key in update ) {
+					this.mqtt[key] = update[key]
+				}
+			}
+		},
 		'devices.list'( latest ) {
 			if ( Array.isArray( latest ) ) {
 				latest.forEach( c => {
@@ -400,12 +563,19 @@ export default {
 		}
 		this.$api.$on( 'status', this.onStatus )
 		this.$api.$on( 'processes', this.onProcesses )
+		this.$api.$on( 'mqtt', this.onMQTT )
+		this.$api.$on( 'notification', this.onNotification )
 	},
 	beforeDestroy() {
 		this.$api.$off( 'status', this.onStatus )
 		this.$api.$off( 'processes', this.onProcesses )
+		this.$api.$off( 'mqtt', this.onMQTT )
+		this.$api.$off( 'notification', this.onNotification )
 	},
 	methods: {
+		onNotification( payload ) {
+			this.$notify( payload )
+		},
 		onStatus( status ) {
 			this.loaded = true
 			for ( const key in status ) {
@@ -414,6 +584,9 @@ export default {
 		},
 		onProcesses( processes ) {
 			this.processes = processes
+		},
+		onMQTT( status ) {
+			this.mqtt.running = status
 		},
 		onRTSPFocus( id ) {
 			this.focused = id
@@ -564,6 +737,14 @@ export default {
 			this.$nextTick( this.saveRtspPath )
 		},
 		async startRTSP( id ) {
+			if ( !this.rtsp_paths[id] || 'string' !== typeof this.rtsp_paths[id] || 0 === this.rtsp_paths[id].trim().length || !this.rtsp_paths[id].startsWith( '/' ) ) {
+				this.$notify( {
+					group: 'errors',
+					text: 'The RTSP Path must begin with a "/"',
+					ignoreDuplicates: true
+				} )
+				return false
+			}
 			this.processing = true
 			try {
 				const res = await this.$api.request( 'startRTSP', id )
@@ -603,6 +784,84 @@ export default {
 			this.processing = true
 			try {
 				const res = await this.$api.request( 'restartRTSP', id )
+				if ( res instanceof Error ) {
+					throw res
+				}
+			}
+			catch ( error ) {
+				this.$notify( {
+					group: 'errors',
+					text: [ error.message, 'See console for more information' ].join( ' ' ),
+					ignoreDuplicates: true
+				} )
+				console.error( error )
+			}
+			this.processing = false
+		},
+		async saveMQTT( e ) {
+			if ( e ) {
+				e.preventDefault()
+				e.stopPropagation()
+			}
+			this.processing = true
+			try {
+				const u = Object.assign( {}, this.mqtt )
+				delete u.running
+				const res = await this.$api.request( 'saveMQTT', u )
+				if ( res instanceof Error ) {
+					throw res
+				}
+			}
+			catch ( error ) {
+				this.$notify( {
+					group: 'errors',
+					text: [ error.message, 'See console for more information' ].join( ' ' ),
+					ignoreDuplicates: true
+				} )
+				console.error( error )
+			}
+			this.processing = false
+		},
+		async startMQTT() {
+			this.processing = true
+			try {
+				const res = await this.$api.request( 'startMQTT' )
+				if ( res instanceof Error ) {
+					throw res
+				}
+			}
+			catch ( error ) {
+				this.$notify( {
+					group: 'errors',
+					text: [ error.message, 'See console for more information' ].join( ' ' ),
+					ignoreDuplicates: true
+				} )
+				console.error( error )
+			}
+			this.processing = false
+		},
+		async restartMQTT() {
+			this.processing = true
+			try {
+				const res = await this.$api.request( 'restartMQTT' )
+				if ( res instanceof Error ) {
+					throw res
+				}
+			}
+			catch ( error ) {
+				this.$notify( {
+					group: 'errors',
+					text: [ error.message, 'See console for more information' ].join( ' ' ),
+					ignoreDuplicates: true
+				} )
+				console.error( error )
+			}
+			this.processing = false
+		},
+		async stopMQTT() {
+			this.processing = true
+			try {
+				const res = await this.$api.request( 'stopMQTT' )
 				if ( res instanceof Error ) {
 					throw res
 				}
