@@ -112,7 +112,7 @@ class FeedClient extends EventEmitter {
 			this.#debugger( `Failed to get stream for ${path} due to error: ${error.message}` )
 			if ( error.message.includes( 'Rate limited' ) ) {
 				this.#debugger( `Will retry to start ${path} in 60 seconds` )
-				this.#setStatus( 'Retrying RTSP' )
+				this.#setStatus( 'RTSP Rate Limited' )
 				await sleep( 60000 )
 			}
 			else {
@@ -167,7 +167,7 @@ class FeedClient extends EventEmitter {
 			this.#debugger( `Failed to get stream for ${path} due to error: ${error.message}` )
 			if ( error.message.includes( 'Rate limited' ) ) {
 				this.#debugger( `Will retry to start ${path} in 60 seconds` )
-				this.#setStatus( 'Retrying WebRTC' )
+				this.#setStatus( 'WebRTC Rate Limited' )
 				await sleep( 60000 )
 			}
 			else {
