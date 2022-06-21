@@ -269,7 +269,7 @@ class FeedClient extends EventEmitter {
 
 	async stop() {
 		this.#stopped = true
-		this.#debugger( `Stopping feed client for ${this.#id}` )
+		this.#debugger( 'Stopping feed client' )
 		this.#setStatus( 'Stopping' )
 		if ( this.#childprocess ) {
 			this.#childprocess.kill( 'SIGINT' )
@@ -277,18 +277,24 @@ class FeedClient extends EventEmitter {
 	}
 
 	async restart() {
-		this.#debugger( `Restarting feed client for ${this.#id}` )
+		this.#debugger( 'Restarting feed client' )
 		await this.stop()
 		this.#setStatus( 'Restarting' )
 		await this.start()
 	}
 
 	async extend() {
-		this.#debugger( `Extending feed client for ${this.#id}` )
-		switch ( this.#method ) {
-			case 'rtsp': return await this.#extendRTSP.apply( this )
-			case 'webrtc': return await this.#extendWebRTC.apply( this )
-			default: return
+		this.#debugger( 'Extending feed client' )
+		try {
+			switch ( this.#method ) {
+				case 'rtsp': return await this.#extendRTSP.apply( this )
+				case 'webrtc': return await this.#extendWebRTC.apply( this )
+				default: return
+			}
+		}
+		catch ( error ) {
+			this.#debugger( 'Failed to extend feed. Restarting the hard way' )
+			return await this.restart()
 		}
 	}
 
