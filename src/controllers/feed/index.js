@@ -18,6 +18,7 @@ class FeedClient extends EventEmitter {
 	#method
 	#path
 	#stream
+	#stopped = false
 
 	constructor( db, id, port ) {
 		super()
@@ -137,7 +138,7 @@ class FeedClient extends EventEmitter {
 		}
 		fp.on( 'exit', async code => {
 			this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
-			if ( ![ 255 ].includes( parseInt( code ) ) ) {
+			if ( ![ 255 ].includes( parseInt( code ) ) && !this.#stopped ) {
 				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
 				await sleep( 5000 )
 				return await this.#startRTSP( path )
@@ -215,6 +216,7 @@ class FeedClient extends EventEmitter {
 	}
 
 	async start() {
+		this.#stopped = false
 		this.#debugger( `Starting feed client for ${this.#id}` )
 		let device
 		try {
@@ -252,6 +254,7 @@ class FeedClient extends EventEmitter {
 	}
 
 	async stop() {
+		this.#stopped = true
 		this.#debugger( `Stopping feed client for ${this.#id}` )
 		this.#setStatus( 'Stopping' )
 		if ( this.#childprocess ) {
