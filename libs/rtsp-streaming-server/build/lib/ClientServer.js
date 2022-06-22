@@ -62,7 +62,7 @@ class ClientServer {
 	}
 
 	async start() {
-		return new Promise( ( resolve, reject ) => {
+		return new Promise( resolve => {
 			this.server.listen( this.rtspPort, () => {
 				debug( 'Now listening on %s', this.rtspPort )
 				return resolve()

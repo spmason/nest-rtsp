@@ -1,5 +1,4 @@
 const { EventEmitter } = require( 'events' )
-const merge = require( 'lodash.merge' )
 const debug = require( 'debug' )
 const getSettings = require( '../../getSettings' )
 

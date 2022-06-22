@@ -116,7 +116,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		await app.snapshot( streams )
 		return respond( rid, 'OK' )
 	} )
-	app.on( 'saveMQTT', async ( rid, args, settings, respond, error ) => {
+	app.on( 'saveMQTT', async ( rid, args, settings, respond ) => {
 		const { count } = db.table( 'settings' ).count( 'key', { as: 'count' } ).where( 'key', 'mqtt_settings' ).first()
 		if ( 0 < parseInt( count ) ) {
 			await db.table( 'settings' ).update( { value: JSON.stringify( args ) } ).where( 'key', 'mqtt_settings' )

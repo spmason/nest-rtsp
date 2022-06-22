@@ -43,7 +43,7 @@ class ClientWrapper {
 		// RTP spec says compliant clients should be sending rtcp Receive Reports (RR) to show their "liveliness"
 		// So we support this as a keepalive too.
 
-		client.rtcpServer.on( 'message', _buf => {
+		client.rtcpServer.on( 'message', () => {
 			this.keepalive()
 		} )
 		this.clients[client.id] = client

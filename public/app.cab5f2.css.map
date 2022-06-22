@@ -1,1 +1,0 @@
-{"version":3,"file":"app.cab5f2.css","mappings":"AAAA,sCACI,6BACA,kCACJ,C","sources":["webpack://nest-rtsp/./gui/app.scss"],"sourcesContent":["html, body, .theme--light.v-application {\n    background: #E0E0E0 !important;\n    background-color: #E0E0E0 !important;\n}\n"],"names":[],"sourceRoot":""}
