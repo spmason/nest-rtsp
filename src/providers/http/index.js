@@ -1,9 +1,13 @@
 const express = require( 'express' )
 const http = require( 'http' )
 const path = require( 'path' )
+const fs = require( 'fs' )
 const { Server:sio } = require( 'socket.io' )
 const EventEmitter = require( 'events' )
 const shortid = require( 'shortid' )
+const debug = require( 'debug' )
+
+const dbg = debug( 'nest-rtsp:http' )
 
 class HTTP_Server extends EventEmitter {
 	#port
@@ -52,6 +56,56 @@ class HTTP_Server extends EventEmitter {
 				}
 			}
 			res.sendFile( path.join( process.env.BASE, 'public', 'index.html' ) )
+		} )
+		this.#app.get( '/private', async ( req, res ) => {
+			if ( [ '::1', '127.0.0.1', '::ffff:127.0.0.1' ].includes( req.ip ) ) {
+				res.sendFile( path.join( process.env.BASE, 'private', 'index.html' ) )
+			}
+			else {
+				dbg( `Got request from ip "${req.ip}"` )
+				res.sendFile( path.join( process.env.BASE, 'public', 'index.html' ) )
+			}
+		} )
+		this.#app.get( '/private/*', async ( req, res ) => {
+			if ( [ '::1', '127.0.0.1', '::ffff:127.0.0.1' ].includes( req.ip ) ) {
+				const rrpath = req.url.replace( '/private/', '' )
+				const rpath = path.join( process.env.BASE, 'private', ( 0 === rrpath.length ) ? 'index.html' : rrpath )
+				if ( fs.existsSync( rpath ) ) {
+					res.sendFile( rpath )
+				}
+				else {
+					res.sendFile( path.join( process.env.BASE, 'private', 'index.html' ) )
+				}
+			}
+			else {
+				dbg( `Got request from ip "${req.ip}"` )
+				res.sendFile( path.join( process.env.BASE, 'public', 'index.html' ) )
+			}
+		} )
+		this.#app.get( '/auth', async ( req, res ) => {
+			if ( [ '::1', '127.0.0.1', '::ffff:127.0.0.1' ].includes( req.ip ) ) {
+				res.sendFile( path.join( process.env.BASE, 'private', 'index.html' ) )
+			}
+			else {
+				dbg( `Got request from ip "${req.ip}"` )
+				res.sendFile( path.join( process.env.BASE, 'public', 'index.html' ) )
+			}
+		} )
+		this.#app.get( '/auth/*', async ( req, res ) => {
+			if ( [ '::1', '127.0.0.1', '::ffff:127.0.0.1' ].includes( req.ip ) ) {
+				const rrpath = req.url.replace( '/auth/', '' )
+				const rpath = path.join( process.env.BASE, 'private', ( 0 === rrpath.length ) ? 'index.html' : rrpath )
+				if ( fs.existsSync( rpath ) ) {
+					res.sendFile( rpath )
+				}
+				else {
+					res.sendFile( path.join( process.env.BASE, 'private', 'index.html' ) )
+				}
+			}
+			else {
+				dbg( `Got request from ip "${req.ip}"` )
+				res.sendFile( path.join( process.env.BASE, 'public', 'index.html' ) )
+			}
 		} )
 		this.#app.use( express.static( path.join( process.env.BASE, 'public' ) ) )
 		this.#app.get( '*', ( req, res ) => {

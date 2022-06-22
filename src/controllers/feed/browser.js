@@ -4,7 +4,9 @@ const puppeteer = require( 'puppeteer-extra' )
 const pluginStealth = require( 'puppeteer-extra-plugin-stealth' )
 const ppUserPrefs = require( 'puppeteer-extra-plugin-user-preferences' )
 const UserAgent = require( 'user-agents' )
+const clc = require( 'cli-color' )
 const { inspect } = require( 'util' )
+const chromePaths = require( 'chrome-paths' )
 
 const dbg = debug( 'nest-rtsp:browser' )
 
@@ -44,12 +46,16 @@ class Browser extends EventEmitter{
 		headless: true,
 		args: this.#args.apply( this ),
 		ignoreHTTPSErrors: true,
-		devtools: false
+		devtools: false,
+		defaultViewPort: {
+			width: 1920,
+			height: 1080
+		},
+		executablePath: chromePaths.chrome
 	} )
 
 	#args = () => ( [
 		'--no-sandbox',
-		'--start-fullscreen',
 		'--disable-setuid-sandbox',
 		'--disable-infobars',
 		'--window-position=0,0',
@@ -60,7 +66,8 @@ class Browser extends EventEmitter{
 		'--window-size=1920,1080',
 		`--user-agent="${this.#userAgent}"`,
 		'--enable-features=NetworkService',
-		'--disk-cache-size=0'
+		'--disk-cache-size=0',
+		'--enable-usermedia-screen-capturing'
 	] )
 
 	#onNewPage = async function( page ) {
@@ -139,6 +146,19 @@ class Browser extends EventEmitter{
 		catch {
 			dbg( 'Failed to update timezone' )
 		}
+		// Forward logs to console
+		page.on( 'console', message => dbg( `${clc.bgCyan.yellowBright( '[CONSOLE]' )} ${message.type().substr( 0, 3 ).toUpperCase()} ${message.text()}` ) )
+		page.on( 'pageerror', ( { message } ) => dbg( `${clc.bgCyan.yellowBright( '[CONSOLE]' )} ${message}` ) )
+		// Expose a function called "emitFatality"
+		page.exposeFunction( 'emitFatality', ( ...args ) => {
+			this.emit( 'fatality', ...args )
+		} )
+		page.exposeFunction( 'emitReady', ( ...args ) => {
+			this.emit( 'ready', ...args )
+		} )
+		page.exposeFunction( 'inspect', ( ...args ) => {
+			dbg( `${clc.bgYellowBright.black( '[INSPECT]' )} ${inspect( [ ...args ], true, 5, true )}` )
+		} )
 	}
 
 	async init() {

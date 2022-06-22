@@ -137,11 +137,11 @@ class PublishServer {
 
 			let mount = this.mounts.getMount( req.uri ) // If the mount already exists, reject
 
-			if ( mount ) {
-				debug( '%s:%s - Mount already existed, sending 503: %o', req.socket.remoteAddress, req.socket.remotePort, req.uri )
-				res.statusCode = 503
-				return res.end()
-			}
+			// if ( mount ) {
+			// 	debug( '%s:%s - Mount already existed, sending 503: %o', req.socket.remoteAddress, req.socket.remotePort, req.uri )
+			// 	res.statusCode = 503
+			// 	return res.end()
+			// }
 
 			mount = this.mounts.addMount( req.uri, sdpBody, this.hooks )
 			res.setHeader( 'Session', `${mount.id};timeout=30` )

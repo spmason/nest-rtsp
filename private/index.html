@@ -1,0 +1,31 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebRTC Stream</title>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <script type="application/javascript" src="adapter.js"></script>
+  <script type="application/javascript" src="api.js"></script>
+  <script type="application/javascript" src="app.js"></script>
+  <script type="application/javascript" src="auth.js"></script>
+  <script type="application/javascript" src="events.js"></script>
+  <script type="application/javascript" src="logger.js"></script>
+  <script type="application/javascript" src="ui.js"></script>
+  <script type="application/javascript" src="webrtc.js"></script>
+  <script type="application/javascript" src="third_party/kjur.min.js"></script>
+</head>
+<body>
+  <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: flex; flex-direction: column; align-content: center; justify-content: center; background-color: #191919;">
+    <video id="video-stream" autoplay playsinline controls></video>
+  </div>
+</body>
+
+<!-- Log Entry Template -->
+<template>
+  <div class="log-entry"></div>
+</template>
+
+<!-- Initializing JavaScript -->
+<!-- <script type="application/javascript">
+  init();
+</script> -->
+</html>
