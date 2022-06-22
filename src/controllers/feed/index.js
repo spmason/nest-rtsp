@@ -1,3 +1,4 @@
+/* globals initializeWebRTC updateWebRTC */
 const { EventEmitter } = require( 'events' )
 const merge = require( 'lodash.merge' )
 const debug = require( 'debug' )
@@ -6,7 +7,12 @@ const sleep = require( '../sleep' )
 const streamer = require( '../streamer' )
 const moment = require( 'moment' )
 const clc = require( 'cli-color' )
+const mserver = require( 'mjpeg-server' )
+const findPort = require( 'find-open-port' )
 const getSettings = require( '../../getSettings' )
+const browser = require( './browser' )
+const jemitter = require( './jemitter' )
+const http = require( 'http' )
 
 class FeedClient extends EventEmitter {
 	#id
@@ -21,6 +27,11 @@ class FeedClient extends EventEmitter {
 	#stream
 	#stopped = false
 	#mqtt
+	#browser
+	#jfe
+	#http
+	#port
+	#mediaSessionId
 
 	constructor( db, id, port, mqtt ) {
 		super()
@@ -75,14 +86,60 @@ class FeedClient extends EventEmitter {
 		return results
 	}
 
+	#getBrowser = async function() {
+		if ( !this.#browser ) {
+			this.#debugger( 'Starting new browser instance' )
+			this.#browser = await browser.launch()
+			this.#browser.on( 'screenshot', data => {
+				if ( this.#jfe ) {
+					this.#jfe.write( data )
+				}
+			} )
+		}
+		if ( !this.#jfe ) {
+			this.#debugger( 'Starting new JPEG Emitter instance' )
+			this.#jfe = new jemitter( 7, 1920,1080 )
+			this.#jfe.start()
+		}
+		if ( !this.#http ) {
+			this.#debugger( 'Starting MJPEG Server' )
+			this.#http = http.createServer( ( req, res ) => {
+				const handler = mserver.createReqHandler( req, res )
+				this.#jfe.on( 'jpeg', data => {
+					handler.write( data )
+				} )
+			} )
+			this.#port = await findPort()
+			this.#debugger( `Found port ${this.#port} available` )
+			if ( !this.#port ) {
+				throw new Error( 'No Ports Avaialble' )
+			}
+			this.#http.listen( this.#port, () => {
+				this.#debugger( `MJPEG server listening on port ${this.#port}` )
+			} )
+		}
+		return this.#browser
+	}
+
 	#getWebRTCStream = async function() {
+		const browser = await this.#getBrowser.apply( this )
+		await browser.startStream()
+		return {
+			streamUrls: {
+				mjpegUrl: `http://127.0.0.1:${this.#port}`
+			},
+			expiresAt: moment().add( 1, 'day' )
+		}
+	}
+
+	#getWebRTCMedia = async function( offerSdp ) {
 		const client = await this.#getGoogleClient()
 		const { data } = await client.enterprises.devices.executeCommand( {
 			name: this.#id,
 			requestBody: {
 				command: 'sdm.devices.commands.CameraLiveStream.GenerateWebRtcStream',
 				params: {
-					offerSdp: null // @TODO replace this
+					offerSdp
 				}
 			}
 		} )
@@ -103,6 +160,9 @@ class FeedClient extends EventEmitter {
 	}
 
 	#startRTSP = async function( path ) {
+		if ( this.#stopped ) {
+			return true
+		}
 		this.#debugger( `Fetching RTSP Stream for ${path}` )
 		this.#setStatus( 'Fetching RTSP' )
 		try {
@@ -143,7 +203,7 @@ class FeedClient extends EventEmitter {
 				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
 			} )
 		}
-		fp.on( 'exit', async code => {
+		fp.once( 'exit', async code => {
 			this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
 			if ( ![ 255 ].includes( parseInt( code ) ) && !this.#stopped ) {
 				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
@@ -158,6 +218,10 @@ class FeedClient extends EventEmitter {
 	}
 
 	#startWebRTC = async function ( path ) {
+		if ( this.#stopped ) {
+			return true
+		}
+		this.#mediaSessionId = null
 		this.#debugger( `Fetching WebRTC Stream for ${path}` )
 		this.#setStatus( 'Fetching WebRTC' )
 		try {
@@ -182,9 +246,88 @@ class FeedClient extends EventEmitter {
 			this.#debugger( `Will retry to start ${path} in 5 seconds` )
 			this.#setStatus( 'Retrying WebRTC' )
 			await sleep( 5000 )
-			return await this.#startRTSP( path )
+			return await this.#startWebRTC( path )
 		}
-		console.log( this.#stream )
+		if ( !this.#childprocess ) {
+			this.#debugger( `Setting up Chromium, MJPEG Server and FFMPEG for ${path}` )
+			const { streamUrls } = this.#stream
+			const { mjpegUrl } = streamUrls
+			const { fp } = streamer.streamMJPEG( mjpegUrl, this.#serverPort, path )
+			this.#childprocess = fp
+			if ( this.#childprocess.stdout ) {
+				this.#childprocess.stdout.on( 'data', data => {
+					this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyan( data )}` )
+				} )
+			}
+			if ( this.#childprocess.stderr ) {
+				this.#childprocess.stderr.on( 'data', data => {
+					this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
+				} )
+			}
+			this.#childprocess.once( 'exit', async code => {
+				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
+				if ( ![ 255 ].includes( parseInt( code ) ) && !this.#stopped ) {
+					this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+					await sleep( 5000 )
+					return await this.#startWebRTC( path )
+				}
+				this.#childprocess = null
+				this.#setStatus( 'Stalled' )
+			} )
+			this.#debugger( 'Opening WebRTC Interface in Chromium' )
+			await this.#browser.page.goto( `http://127.0.0.1:${process.env.HTTP_PORT || 3000}/private/`, { waitUntil: [ 'networkidle0', 'domcontentloaded' ] } )
+		}
+		else {
+			this.#debugger( `Chromium, MJPEG Server and FFMPEG are already running for ${path}. Reloading frame` )
+			await this.#browser.page.reload( { waitUntil: [ 'networkidle0', 'domcontentloaded' ] } )
+		}
+		this.#browser.once( 'fatality', async message => {
+			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} exited with message ${clc.magentaBright( message )}` )
+			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+			await sleep( 5000 )
+			return await this.#startWebRTC( path )
+		} )
+		this.#setStatus( `PID ${this.#childprocess.pid}` )
+		this.#debugger( 'Getting Offer SDP' )
+		const offerSDP = await this.#browser.page.evaluate( async () => {
+			initializeWebRTC()
+			while ( !offerSDP ) {
+				await new Promise( resolve => setTimeout( resolve, 100 ) )
+			}
+			return offerSDP
+		}, null )
+		this.#debugger( 'Getting Answer SDP' )
+		let media
+		try {
+			media = await this.#getWebRTCMedia.apply( this, [ offerSDP ] )
+		}
+		catch ( error ) {
+			this.#debugger( `Failed to get stream for ${path} due to error: ${error.message}` )
+			if ( error.message.includes( 'Rate limited' ) ) {
+				this.#debugger( `Will retry to start ${path} in 60 seconds` )
+				this.#setStatus( 'WebRTC Rate Limited' )
+				await sleep( 60000 )
+			}
+			else {
+				this.#debugger( `Will retry to start ${path} in 5 seconds` )
+				this.#setStatus( 'Retrying WebRTC' )
+				await sleep( 5000 )
+			}
+			return await this.#startWebRTC( path )
+		}
+		if ( !media || !media.answerSdp ) {
+			this.#debugger( `Failed to get stream for ${path} without an error` )
+			this.#debugger( `Will retry to start ${path} in 5 seconds` )
+			this.#setStatus( 'Retrying WebRTC' )
+			await sleep( 5000 )
+			return await this.#startWebRTC( path )
+		}
+		this.#mediaSessionId = media.mediaSessionId
+		this.#expiration = moment( media.expiresAt )
+		this.#debugger( 'Updating Answer SDP' )
+		await this.#browser.page.evaluate( answerSdp => {
+			updateWebRTC( answerSdp )
+		}, media.answerSdp )
 	}
 
 	#extendRTSP = async function() {
@@ -209,23 +352,19 @@ class FeedClient extends EventEmitter {
 	}
 
 	#extendWebRTC = async function() {
-		if ( this.#stream ) {
+		if ( this.#mediaSessionId ) {
 			const client = await this.#getGoogleClient()
-			const { mediaSessionId } = this.#stream
 			const { data } = await client.enterprises.devices.executeCommand( {
 				name: this.#id,
 				requestBody: {
 					command: 'sdm.devices.commands.CameraLiveStream.ExtendWebRtcStream',
 					params: {
-						mediaSessionId
+						mediaSessionId: this.#mediaSessionId
 					}
 				}
 			} )
 			const { results } = data
-			const updated = merge( {}, this.#stream, results )
-			this.#stream = updated
-			const { expiresAt } = this.#stream
-			this.#expiration = moment( expiresAt )
+			this.#expiration = moment( results.expiresAt )
 		}
 	}
 
@@ -269,26 +408,47 @@ class FeedClient extends EventEmitter {
 
 	async stop() {
 		this.#stopped = true
-		this.#debugger( `Stopping feed client for ${this.#id}` )
+		this.#debugger( 'Stopping feed client' )
 		this.#setStatus( 'Stopping' )
 		if ( this.#childprocess ) {
 			this.#childprocess.kill( 'SIGINT' )
 		}
+		if ( this.#browser ) {
+			await this.#browser.close()
+			this.#browser = null
+		}
+		if ( this.#jfe ) {
+			this.#jfe.stop()
+			this.#jfe = null
+		}
+		if ( this.#http ) {
+			this.#http.close()
+			this.#http = null
+		}
+		if ( this.#port ) {
+			this.#port = null
+		}
 	}
 
 	async restart() {
-		this.#debugger( `Restarting feed client for ${this.#id}` )
+		this.#debugger( 'Restarting feed client' )
 		await this.stop()
 		this.#setStatus( 'Restarting' )
 		await this.start()
 	}
 
 	async extend() {
-		this.#debugger( `Extending feed client for ${this.#id}` )
-		switch ( this.#method ) {
-			case 'rtsp': return await this.#extendRTSP.apply( this )
-			case 'webrtc': return await this.#extendWebRTC.apply( this )
-			default: return
+		this.#debugger( 'Extending feed client' )
+		try {
+			switch ( this.#method ) {
+				case 'rtsp': return await this.#extendRTSP.apply( this )
+				case 'webrtc': return await this.#extendWebRTC.apply( this )
+				default: return
+			}
+		}
+		catch ( error ) {
+			this.#debugger( 'Failed to extend feed. Restarting the hard way' )
+			return await this.restart()
 		}
 	}
 

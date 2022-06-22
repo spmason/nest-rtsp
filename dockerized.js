@@ -5,7 +5,7 @@
  * It first runs the relevant database migrations, and then launches the server
  */
 const path = require( 'path' )
-const { exec, fork } = require( 'child_process' )
+const { fork } = require( 'child_process' )
 const clc = require( 'cli-color' )
 
 const run = async () => {
