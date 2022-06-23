@@ -84,7 +84,7 @@ const getDevices = async google_access_tokens => {
 	} )
 	const { data: list } = await client.enterprises.devices.list( { parent: [ 'enterprises', GA_SDM_PID ].join( '/' ) } )
 	const { devices } = list
-	const cameras = devices.filter( d => Object.keys( d.traits ).includes( 'sdm.devices.traits.CameraLiveStream' ) )
+	const cameras = devices ? devices.filter( d => Object.keys( d.traits ).includes( 'sdm.devices.traits.CameraLiveStream' ) ) : []
 	return cameras
 }
 
