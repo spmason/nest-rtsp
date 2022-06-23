@@ -289,6 +289,15 @@ class FeedClient extends EventEmitter {
 		} )
 		this.#setStatus( `PID ${this.#childprocess.pid}` )
 		this.#debugger( 'Getting Offer SDP' )
+		const runnable = await this.#browser.page.evaluate( async () => {
+			return 'function' === typeof initializeWebRTC
+		}, null )
+		if ( !runnable ) {
+			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} did not load client-side WebRTC libraries correctly.` )
+			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+			await sleep( 5000 )
+			return await this.#startWebRTC( path )
+		}
 		const offerSDP = await this.#browser.page.evaluate( async () => {
 			initializeWebRTC()
 			while ( !offerSDP ) {
