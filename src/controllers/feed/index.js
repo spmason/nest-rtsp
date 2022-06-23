@@ -203,16 +203,7 @@ class FeedClient extends EventEmitter {
 				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.redBright( data )}` )
 			} )
 		}
-		fp.once( 'exit', async code => {
-			this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( code )}` )
-			if ( ![ 255 ].includes( parseInt( code ) ) && !this.#stopped ) {
-				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
-				await sleep( 5000 )
-				return await this.#startRTSP( path )
-			}
-			this.#childprocess = null
-			this.#setStatus( 'Stalled' )
-		} )
+		fp.once( 'exit', this.#onChildProcessExit.bind( this, path ) )
 		this.#childprocess = fp
 		this.#setStatus( `PID ${this.#childprocess.pid}` )
 	}
@@ -375,6 +366,25 @@ class FeedClient extends EventEmitter {
 			const { results } = data
 			this.#expiration = moment( results.expiresAt )
 		}
+	}
+
+	#onChildProcessExit = async function( path, code ) {
+		if ( !isNaN( parseInt( code ) ) ) {
+			this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited with code ${clc.magentaBright( parseInt( code ) )}` )
+			if ( ![ 255 ].includes( parseInt( code ) ) && !this.#stopped ) {
+				this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+				await sleep( 5000 )
+				return await this.#startRTSP( path )
+			}
+		}
+		else {
+			this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} exited due to node.js runs out of buffer memory and can't handle the execution` )
+			this.#debugger( `${clc.bgRedBright.black( '[STREAMER]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+			await sleep( 5000 )
+			return await this.#startRTSP( path )
+		}
+		this.#childprocess = null
+		this.#setStatus( 'Stalled' )
 	}
 
 	async start() {
