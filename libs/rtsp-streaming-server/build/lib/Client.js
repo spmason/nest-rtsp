@@ -73,7 +73,7 @@ class Client {
 					this.mount.mounts.returnRtpPortToPool( this.rtpServerPort )
 				}
 
-				this.setupServerPorts()
+				await this.setupServerPorts()
 			} else {
 				throw e
 			}
@@ -167,8 +167,8 @@ class Client {
 		} )
 	}
 
-	setupServerPorts() {
-		const rtpServerPort = this.mount.mounts.getNextRtpPort()
+	async setupServerPorts() {
+		const rtpServerPort = await this.mount.mounts.getNextRtpPort()
 
 		if ( !rtpServerPort ) {
 			throw new Error( 'Unable to get next RTP Server Port' )

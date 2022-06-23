@@ -156,7 +156,7 @@ class PublishServer {
    */
 
 
-	setupRequest( req, res ) {
+	async setupRequest( req, res ) {
 		// Authentication check
 		if ( !this.checkAuthenticated( req, res ) ) {
 			return
@@ -179,7 +179,7 @@ class PublishServer {
 			return res.end()
 		}
 
-		const create = mount.createStream( req.uri )
+		const create = await mount.createStream( req.uri )
 		res.setHeader( 'Transport', `${req.headers.transport};server_port=${create.rtpStartPort}-${create.rtpEndPort}` )
 		res.end()
 	}

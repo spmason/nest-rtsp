@@ -1,5 +1,5 @@
 'use strict'
-
+const findPort = require( 'find-open-port' )
 Object.defineProperty( exports, '__esModule', {
 	value: true
 } )
@@ -34,9 +34,15 @@ class Mounts {
 		return mount
 	}
 
-	getNextRtpPort() {
+	async getNextRtpPort() {
 		debug( '%d rtp ports remaining', this.rtpPorts.length - 1 )
-		return this.rtpPorts.shift()
+		let port = this.rtpPorts.shift()
+		let availble = await findPort.isAvailable( port )
+		while ( !availble && 0 < this.rtpPorts.length ) {
+			port = this.rtpPorts.shift()
+			availble = await findPort.isAvailable( port )
+		}
+		return port
 	}
 
 	returnRtpPortToPool( port ) {
