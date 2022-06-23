@@ -47,7 +47,8 @@ const streamMJPEG = ( src, port = 554, path = '/' ) => {
 		'-vsync 0',
 		'-enc_time_base -1',
 		'-err_detect ignore_err',
-		'-c copy',
+		'-c:v libx264',
+		'-an',
 		`rtsp://127.0.0.1:${port}${path}`
 	]
 	const cmd = args.join( ' ' )
