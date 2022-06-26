@@ -62,6 +62,7 @@ Compile GUI:
       - package.json
       - public
   script:
+    - NODE_ENV=build && npm ci && NODE_ENV=production
     - npm run compile-gui
 
 Build Production:
