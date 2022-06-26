@@ -54,6 +54,7 @@ Compile GUI:
   stage: build
   only:
     - tags
+    - master
   artifacts:
     expire_in: 1 day
     paths:
