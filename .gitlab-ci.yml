@@ -30,7 +30,7 @@ Build Release:
   script:
     - docker pull $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG} || true
     - docker build --cache-from $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG} --build-arg VERSION="$CI_COMMIT_REF_NAME" --tag $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG} --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_REF_SLUG} .
-    - docker build --cache-from $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG}-nochrome --build-arg VERSION="$CI_COMMIT_REF_NAME" --tag $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG}-nochrome --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_REF_SLUG}-nochrome ./nochrome.Dockerfile
+    - docker build --cache-from $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG}-nochrome --build-arg VERSION="$CI_COMMIT_REF_NAME" --tag $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG}-nochrome --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_REF_SLUG}-nochrome -f ./nochrome.Dockerfile .
     - docker push $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG}
     - docker push $CONTAINER_IMAGE:${CI_COMMIT_REF_SLUG}-nochrome
     - docker push index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_REF_SLUG}
@@ -78,7 +78,7 @@ Build Production:
   script:
     - docker pull $CONTAINER_IMAGE:stable || true
     - docker build --cache-from $CONTAINER_IMAGE:stable --build-arg VERSION="$CI_COMMIT_TAG" --tag $CONTAINER_IMAGE:${CI_COMMIT_TAG} --tag $CONTAINER_IMAGE:stable --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_TAG} --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:stable .
-    - docker build --cache-from $CONTAINER_IMAGE:stable-nochrome --build-arg VERSION="$CI_COMMIT_TAG" --tag $CONTAINER_IMAGE:${CI_COMMIT_TAG}-nochrome --tag $CONTAINER_IMAGE:stable-nochrome --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_TAG}-nochrome --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:stable-nochrome ./nochrome.Dockerfile
+    - docker build --cache-from $CONTAINER_IMAGE:stable-nochrome --build-arg VERSION="$CI_COMMIT_TAG" --tag $CONTAINER_IMAGE:${CI_COMMIT_TAG}-nochrome --tag $CONTAINER_IMAGE:stable-nochrome --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:${CI_COMMIT_TAG}-nochrome --tag index.$DOCKER_REGISTRY/$DOCKER_USER/$CI_PROJECT_NAME:stable-nochrome -f ./nochrome.Dockerfile .
     - docker push $CONTAINER_IMAGE:${CI_COMMIT_TAG}
     - docker push $CONTAINER_IMAGE:${CI_COMMIT_TAG}-nochrome
     - docker push $CONTAINER_IMAGE:stable
