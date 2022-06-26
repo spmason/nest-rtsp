@@ -24,9 +24,9 @@ class Mount {
 		debug( 'Set up mount at path %s', path )
 	}
 
-	createStream( uri ) {
+	async createStream( uri ) {
 		const info = ( 0, _utils.getMountInfo )( uri )
-		const nextPort = this.mounts.getNextRtpPort()
+		const nextPort = await this.mounts.getNextRtpPort()
 
 		if ( !nextPort ) {
 			throw new Error( 'No ports available to create the stream' )
@@ -71,7 +71,7 @@ class Mount {
 					}
 
 					this.mounts.returnRtpPortToPool( stream.rtpStartPort )
-					const nextStartPort = this.mounts.getNextRtpPort()
+					const nextStartPort = await this.mounts.getNextRtpPort()
 
 					if ( !nextStartPort ) {
 						throw new Error( 'Unable to get another start port' )

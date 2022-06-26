@@ -14,6 +14,15 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 	const app = new controllers.app( server, port, db )
 	// setup the event listeners for specific requests
 	mqtt.on( 'updated', app.tick.bind( app, streams, mqtt ) )
+	app.on( 'sysinfo', async ( id, args, settings, respond, error ) => {
+		try {
+			const res = await controllers.sys( settings )
+			respond( id, res )
+		}
+		catch ( err ) {
+			error( id, err )
+		}
+	} )
 	app.on( 'gaurl', async ( id, args, settings, respond, error ) => {
 		try {
 			const url = await controllers.google.getRedirectUrl( id )
@@ -91,7 +100,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 		if ( streams.has( id ) ) {
 			return error( rid, new Error( 'Stream Already Exists' ) )
 		}
-		streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+		streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt, configuration.webrtc ) )
 		streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
 		await streams.get( id ).start()
 		await app.snapshot( streams )
@@ -162,7 +171,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			for ( let i = 0; i < ids.length; i++ ) {
 				const id = ids[i]
 				if ( !streams.has( id ) ) {
-					streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+					streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt, configuration.webrtc ) )
 					streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
 					await streams.get( id ).start()
 				}
@@ -174,7 +183,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 			for ( const id in rtsp_paths ) {
 				if ( rtsp_paths[id] === payload.path ) {
 					if ( !streams.has( id ) ) {
-						streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt ) )
+						streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt, configuration.webrtc ) )
 						streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
 						await streams.get( id ).start()
 					}
