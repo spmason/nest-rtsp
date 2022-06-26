@@ -17,6 +17,7 @@ const http = require( 'http' )
 class FeedClient extends EventEmitter {
 	#id
 	#db
+	#webRTCConfig
 	#status
 	#debugger
 	#expiration
@@ -33,9 +34,10 @@ class FeedClient extends EventEmitter {
 	#port
 	#mediaSessionId
 
-	constructor( db, id, port, mqtt ) {
+	constructor( db, id, port, mqtt, webRTCConfig ) {
 		super()
 		this.#db = db
+		this.#webRTCConfig = webRTCConfig
 		this.#id = id
 		const lastSlashPost = id.lastIndexOf( '/' )
 		this.#debugger = debug( `nest-rtsp:controller:feed:${id.substr( lastSlashPost )}` )
@@ -89,7 +91,7 @@ class FeedClient extends EventEmitter {
 	#getBrowser = async function() {
 		if ( !this.#browser ) {
 			this.#debugger( 'Starting new browser instance' )
-			this.#browser = await browser.launch()
+			this.#browser = await browser.launch( this.#webRTCConfig )
 			this.#browser.on( 'screenshot', data => {
 				if ( this.#jfe ) {
 					this.#jfe.write( data )
@@ -98,7 +100,7 @@ class FeedClient extends EventEmitter {
 		}
 		if ( !this.#jfe ) {
 			this.#debugger( 'Starting new JPEG Emitter instance' )
-			this.#jfe = new jemitter( 7, 1920,1080 )
+			this.#jfe = new jemitter( 7, this.#webRTCConfig.width, this.#webRTCConfig.height )
 			this.#jfe.start()
 		}
 		if ( !this.#http ) {

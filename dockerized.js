@@ -47,7 +47,8 @@ const run = async () => {
 	// Launch Server
 	console.log( clc.cyan( 'Launching Server' ) )
 	const server = fork( './server.js', [], {
-		cwd: path.join( __dirname )
+		cwd: path.join( __dirname ),
+		env: { ...process.env, containerized: true }
 	} )
 	server.on( 'exit', code => {
 		process.exit( code )

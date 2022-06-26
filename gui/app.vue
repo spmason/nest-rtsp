@@ -17,6 +17,16 @@
       </v-toolbar-title>
       <v-spacer />
       <v-btn
+        color="primary"
+        x-small
+        dark
+        :loading="sysinfo.loading"
+        :disabled="!$api.connected"
+        @click="getSysInfo"
+      >
+        Sys Info
+      </v-btn>
+      <v-btn
         icon
         color="primary"
         href="https://nest-rtsp.jak.guru/"
@@ -159,6 +169,7 @@
         <v-icon>mdi-cancel</v-icon>
       </v-btn>
       <v-icon
+        :class="authenticated ? '' : 'ml-2'"
         :color="$api.connected ? 'success' : 'error'"
         :title="$api.connected ? 'Connected' : 'Not Connected'"
         v-text="$api.connected ? 'mdi-lan-connect' : 'mdi-lan-disconnect'"
@@ -397,13 +408,45 @@
           </v-col>
         </v-row>
       </v-container>
+      <v-dialog
+        v-model="sysinfo.show"
+        persistent
+        max-width="500"
+      >
+        <v-card>
+          <v-toolbar
+            flat
+            dense
+            color="transparent"
+          >
+            <v-toolbar-title>System Information</v-toolbar-title>
+            <v-spacer />
+            <v-btn
+              icon
+              @click="closeSysInfo"
+            >
+              <v-icon>mdi-close</v-icon>
+            </v-btn>
+          </v-toolbar>
+          <v-divider />
+          <pre
+            class="pa-3"
+            style="overflow: auto"
+            v-text="JSON.stringify(sysinfo.output, null, 2)"
+          />
+        </v-card>
+      </v-dialog>
     </v-main>
+    <v-footer app>
+      <small v-text="version" />
+    </v-footer>
   </v-app>
 </template>
 
 <script>
 import Vue from 'vue'
 import merge from 'lodash.merge'
+import pckg from '../package.json'
 export default {
 	data: () => ( {
 		loaded: false,
@@ -435,9 +478,17 @@ export default {
 			host: '',
 			user: '',
 			password: ''
+		},
+		sysinfo: {
+			show: false,
+			loading: false,
+			output: {}
 		}
 	} ),
 	computed: {
+		version() {
+			return ( !pckg.version || '0.0.1' === pckg.version ) ? 'Development' : `v${pckg.version}`
+		},
 		authenticated() {
 			return null !== this.status.google_access_tokens
 		},
@@ -573,6 +624,36 @@ export default {
 		this.$api.$off( 'notification', this.onNotification )
 	},
 	methods: {
+		async getSysInfo() {
+			this.sysinfo.loading = true
+			try {
+				this.$notify( {
+					group: 'errors',
+					text: 'Loading system information including performing a speed test. Please wait.'
+				} )
+				const output = await this.$api.request( 'sysinfo', null, 120000 )
+				if ( output instanceof Error ) {
+					throw output
+				}
+				this.sysinfo.output = output
+				this.sysinfo.show = true
+			}
+			catch ( error ) {
+				this.$notify( {
+					group: 'errors',
+					text: [ error.message, 'See console for more information' ].join( ' ' ),
+					ignoreDuplicates: true
+				} )
+				console.error( error )
+			}
+			this.sysinfo.loading = false
+		},
+		closeSysInfo() {
+			this.sysinfo.show = false
+			this.$nextTick( () => {
+				this.sysinfo.output = {}
+			} )
+		},
 		onNotification( payload ) {
 			this.$notify( payload )
 		},
@@ -602,7 +683,6 @@ export default {
 					throw url
 				}
 				window.location.href = url
-				this.processing = false
 			}
 			catch ( error ) {
 				this.$notify( {
@@ -612,6 +692,7 @@ export default {
 				} )
 				console.error( error )
 			}
+			this.processing = false
 		},
 		async logOutOfGoogle() {
 			this.processing = true
@@ -667,7 +748,6 @@ export default {
 					throw url
 				}
 				win.location.href = url
-				this.processing = false
 			}
 			catch ( error ) {
 				this.$notify( {
@@ -677,6 +757,7 @@ export default {
 				} )
 				console.error( error )
 			}
+			this.processing = false
 		},
 		saveAll( e ) {
 			if ( e ) {

@@ -34,6 +34,17 @@ class Browser extends EventEmitter{
 
 	#images = new Map()
 
+	#width = 640
+	#height = 480
+
+	constructor( webRTCConfig ) {
+		super()
+		if ( 'object' === typeof webRTCConfig && null !== webRTCConfig ) {
+			this.#width = webRTCConfig.width
+			this.#height = webRTCConfig.height
+		}
+	}
+
 	get page() {
 		return this.#page
 	}
@@ -48,8 +59,8 @@ class Browser extends EventEmitter{
 		ignoreHTTPSErrors: true,
 		devtools: false,
 		defaultViewPort: {
-			width: 1920,
-			height: 1080
+			width: this.#width,
+			height: this.#height
 		},
 		executablePath: chromePaths.chrome
 	} )
@@ -63,7 +74,7 @@ class Browser extends EventEmitter{
 		'--ignore-certifcate-errors-spki-list',
 		'--disable-dev-shm-usage',
 		'--disable-notifications',
-		'--window-size=1920,1080',
+		`--window-size=${this.#width},${this.#height}`,
 		`--user-agent="${this.#userAgent}"`,
 		'--enable-features=NetworkService',
 		'--disk-cache-size=0',
@@ -198,8 +209,8 @@ class Browser extends EventEmitter{
 			await client.send( 'Page.startScreencast', {
 				format: 'jpeg',
 				quality: 100,
-				maxWidth: 1920,
-				maxHeight: 1080
+				maxWidth: this.#width,
+				maxHeight: this.#height
 			} )
 		}
 		dbg( 'Started Screencast' )
@@ -214,8 +225,8 @@ class Browser extends EventEmitter{
 		dbg( 'Stopped Screencast' )
 	}
 
-	static async launch() {
-		const obj = new this
+	static async launch( webRTCConfig ) {
+		const obj = new this( webRTCConfig )
 		await obj.init()
 		return obj
 	}
