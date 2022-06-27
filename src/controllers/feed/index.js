@@ -34,7 +34,7 @@ class FeedClient extends EventEmitter {
 	#port
 	#mediaSessionId
 
-	constructor( db, id, port, mqtt, webRTCConfig ) {
+	constructor( db, id, port, mqtt, webRTCConfig = { width: 640, height: 480 } ) {
 		super()
 		this.#db = db
 		this.#webRTCConfig = webRTCConfig
@@ -267,11 +267,11 @@ class FeedClient extends EventEmitter {
 				this.#childprocess = null
 				this.#setStatus( 'Stalled' )
 			} )
-			this.#debugger( 'Opening WebRTC Interface in Chromium' )
+			this.#debugger( 'Opening WebRTC Interface in Google Chrome' )
 			await this.#browser.page.goto( `http://127.0.0.1:${process.env.HTTP_PORT || 3000}/private/`, { waitUntil: [ 'networkidle0', 'domcontentloaded' ] } )
 		}
 		else {
-			this.#debugger( `Chromium, MJPEG Server and FFMPEG are already running for ${path}. Reloading frame` )
+			this.#debugger( `Google Chrome, MJPEG Server and FFMPEG are already running for ${path}. Reloading frame` )
 			await this.#browser.page.reload( { waitUntil: [ 'networkidle0', 'domcontentloaded' ] } )
 		}
 		this.#browser.once( 'fatality', async message => {
@@ -281,16 +281,29 @@ class FeedClient extends EventEmitter {
 			return await this.#startWebRTC( path )
 		} )
 		this.#setStatus( `PID ${this.#childprocess.pid}` )
-		this.#debugger( 'Getting Offer SDP' )
-		const runnable = await this.#browser.page.evaluate( async () => {
-			return 'function' === typeof initializeWebRTC
-		}, null )
-		if ( !runnable ) {
-			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} did not load client-side WebRTC libraries correctly.` )
+		this.#debugger( 'Waiting for WebRTC Libraries to Load' )
+		try {
+			await this.#browser.page.waitForFunction( '\'function\' === typeof initializeWebRTC', {
+				timeout: 60000
+			} )
+		}
+		catch ( error ) {
+			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} failed to detect WebRTC Libraries with error: ${error.message}` )
 			this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
 			await sleep( 5000 )
 			return await this.#startWebRTC( path )
 		}
+		// this.#debugger( 'Checking if WebRTC is available' )
+		// const runnable = await this.#browser.page.evaluate( async () => {
+		// 	return 'function' === typeof initializeWebRTC
+		// }, null )
+		// if ( !runnable ) {
+		// 	this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} did not load client-side WebRTC libraries correctly.` )
+		// 	this.#debugger( `${clc.bgRedBright.black( '[WebRTC]' )}${clc.yellowBright( '[' + path + ']' )} ${clc.cyanBright( 'Attempting to automatically restart stream' )}` )
+		// 	await sleep( 5000 )
+		// 	return await this.#startWebRTC( path )
+		// }
+		this.#debugger( 'Getting Offer SDP' )
 		const offerSDP = await this.#browser.page.evaluate( async () => {
 			initializeWebRTC()
 			while ( !offerSDP ) {

@@ -260,7 +260,7 @@ http.init( configuration.get( 'http.port' ) ).then( async ( { port, server } ) =
 	rtsps_snapshot.map( async id => {
 		if ( !streams.has( id ) ) {
 			dbg( `Loading Stream for ${id}` )
-			streams.set( id, new controllers.feed( db, id, rtsps.ports.server ) )
+			streams.set( id, new controllers.feed( db, id, rtsps.ports.server, mqtt, configuration.webrtc ) )
 			streams.get( id ).on( 'updated', app.tick.bind( app, streams, mqtt ) )
 			await streams.get( id ).start()
 			dbg( `Loaded Stream for ${id}` )
