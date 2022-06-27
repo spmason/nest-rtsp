@@ -11,6 +11,7 @@ ENV RTSP_RTP_COUNT=10000
 ENV GA_OAUTH_RDR=
 ENV WEBRTC_RESOLUTION_WIDTH=640
 ENV WEBRTC_RESOLUTION_HEIGHT=480
+ENV DEBUG=nest-rtsp:*
 WORKDIR /home/nest-rtsp
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - 
 RUN sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
