@@ -1,5 +1,7 @@
 # Nest RTSP Manager
 
+**NEW** Because of community interest, I've created a [Discord](https://discord.gg/Stx427N84n) people to ask questions in a more comfortable format.
+
 Uses Google's [Smart Device Managemement](https://developers.google.com/nest/device-access) API's to provide an RTSP feed which can be consumed by other RTSP clients such as VLC, Home Assistant, Frigate etc.
 
 # Before you Start
